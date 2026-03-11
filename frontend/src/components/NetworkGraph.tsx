@@ -107,11 +107,13 @@ export default function NetworkGraph({
   loadingNodes = [],
   animatingRoute,
   onInteraction,
+  agentLabels,
 }: {
   agents: AgentState[];
   loadingNodes?: LoadingNode[];
   animatingRoute?: AnimatingRoute | null;
   onInteraction?: (interaction: GraphInteraction) => void;
+  agentLabels?: (i: number) => string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -205,7 +207,7 @@ export default function NetworkGraph({
       const saved = nodePositions.current.get(pid);
       n.push({
         id: pid,
-        label: `Agent ${agentLetter(i)}`,
+        label: agentLabels ? agentLabels(i) : `Agent ${agentLetter(i)}`,
         type: "agent",
         online: agent.online,
         color: agentColor(i),
@@ -714,11 +716,16 @@ export default function NetworkGraph({
 
     // Letter inside circle
     agentSel.append("text")
-      .text((d) => d.label.replace("Agent ", ""))
+      .text((d) => {
+        // Show short label: strip "Agent " prefix, or first 2 chars of custom name
+        const stripped = d.label.replace(/^Agent\s*/i, "");
+        return stripped.length <= 3 ? stripped : stripped.slice(0, 2);
+      })
       .attr("fill", "white").attr("font-size", 15).attr("font-weight", 700)
       .attr("font-family", "Inter, system-ui")
       .attr("text-anchor", "middle").attr("dominant-baseline", "central")
       .style("pointer-events", "none");
+    agentSel.append("title").text((d) => d.label);
 
     // --- Peer nodes ---
     const peerSel = nodeSel.filter((d) => d.type === "peer");

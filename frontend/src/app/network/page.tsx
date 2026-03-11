@@ -70,7 +70,11 @@ export default function NetworkPage() {
     return list;
   }, [agentPorts, agentStates]);
 
-  const agentLabel = useCallback((i: number) => `Agent ${String.fromCharCode(65 + i)}`, []);
+  const [agentNames, setAgentNames] = useState<Map<number, string>>(new Map());
+  const agentLabel = useCallback((i: number) => {
+    const port = manager.agents[i]?.apiPort ?? 8080 + i;
+    return agentNames.get(port) || `Agent ${String.fromCharCode(65 + i)}`;
+  }, [manager.agents, agentNames]);
   const { events, diffState, pushEvent } = useNetworkEvents(allAgents, agentLabel);
 
   const diffKey = allAgents.map((a) => `${a.online}|${a.channels.length}|${a.peers.length}`).join(",");
@@ -387,7 +391,7 @@ export default function NetworkPage() {
 
         {/* ── Center: graph ── */}
         <main className="flex-1 relative min-h-0">
-          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} animatingRoute={animatingRoute} onInteraction={handleGraphInteraction} />
+          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} animatingRoute={animatingRoute} onInteraction={handleGraphInteraction} agentLabels={agentLabel} />
 
           {/* Interaction popup overlay */}
           {interaction && (
@@ -466,6 +470,12 @@ export default function NetworkPage() {
                 </p>
               </div>
 
+              <SimulationPanel
+                manager={manager} allAgents={allAgents} onlineAgents={onlineAgents} lbl={lbl} agentLabel={agentLabel}
+                setLoadingNodes={setLoadingNodes} setAnimatingRoute={setAnimatingRoute}
+                collectKnownChannels={collectKnownChannels} pushEvent={pushEvent}
+                agentNames={agentNames} setAgentNames={setAgentNames}
+              />
               <RoutePaymentForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} setLoadingNodes={setLoadingNodes} setAnimatingRoute={setAnimatingRoute} collectKnownChannels={collectKnownChannels} pushEvent={pushEvent} />
               <FallbackOpenChannelForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} pushEvent={pushEvent} />
               <FallbackSendPaymentForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} setLoadingNodes={setLoadingNodes} pushEvent={pushEvent} />
@@ -1092,6 +1102,351 @@ function ResultMsg({ result }: { result: { ok: boolean; msg: string } }) {
   return (
     <div className={`text-[11px] rounded-md px-2 py-1.5 ${result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
       {result.msg}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Simulation Panel
+// ═══════════════════════════════════════════════════════════
+
+type SimPhase = "idle" | "spawning" | "connecting" | "simulating" | "done";
+
+function SimulationPanel({
+  manager, allAgents, onlineAgents, lbl, agentLabel,
+  setLoadingNodes, setAnimatingRoute, collectKnownChannels, pushEvent,
+  agentNames, setAgentNames,
+}: {
+  manager: ReturnType<typeof useAgentManager>;
+  allAgents: AgentState[];
+  onlineAgents: AgentState[];
+  lbl: (a: AgentState) => string;
+  agentLabel: (i: number) => string;
+  setLoadingNodes: React.Dispatch<React.SetStateAction<LoadingNode[]>>;
+  setAnimatingRoute: React.Dispatch<React.SetStateAction<AnimatingRoute | null>>;
+  collectKnownChannels: () => { channel_id: string; peer_a: string; peer_b: string; capacity: number }[];
+  pushEvent: (e: Omit<NetworkEvent, "id" | "timestamp">) => void;
+  agentNames: Map<number, string>;
+  setAgentNames: React.Dispatch<React.SetStateAction<Map<number, string>>>;
+}) {
+  const [nodeCount, setNodeCount] = useState("4");
+  const [deposit, setDeposit] = useState("5000000");
+  const [paymentRounds, setPaymentRounds] = useState("10");
+  const [minPay, setMinPay] = useState("10000");
+  const [maxPay, setMaxPay] = useState("500000");
+  const [phase, setPhase] = useState<SimPhase>("idle");
+  const [progress, setProgress] = useState("");
+  const [topology, setTopology] = useState<"ring" | "mesh" | "random">("ring");
+  const cancelRef = useRef(false);
+  const [editingNames, setEditingNames] = useState(false);
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+  const runSimulation = async () => {
+    cancelRef.current = false;
+    const count = parseInt(nodeCount);
+    const dep = parseInt(deposit);
+    const rounds = parseInt(paymentRounds);
+    const lo = parseInt(minPay);
+    const hi = parseInt(maxPay);
+
+    if (isNaN(count) || count < 2 || count > 20) return;
+    if (isNaN(dep) || dep < 1000) return;
+    if (isNaN(rounds) || rounds < 1) return;
+
+    // Phase 1: Spawn nodes (skip already-running ones)
+    setPhase("spawning");
+    const needed = count - manager.agents.length;
+    if (needed > 0) {
+      for (let i = 0; i < needed; i++) {
+        if (cancelRef.current) { setPhase("idle"); return; }
+        setProgress(`Spawning node ${i + 1}/${needed}...`);
+        await manager.startAgent();
+        await sleep(1500); // let agent boot
+      }
+      // Wait for all agents to be online
+      setProgress("Waiting for nodes to come online...");
+      await sleep(3000);
+    }
+    setProgress(`${count} nodes ready`);
+
+    // Phase 2: Connect peers and open channels
+    setPhase("connecting");
+    // Refresh to get latest agent states
+    await manager.refresh();
+    await sleep(1000);
+
+    // Build pairs based on topology
+    // We need to work with the online agents at this point
+    // Re-read from the current allAgents prop
+    const agents = [...onlineAgents];
+    if (agents.length < 2) {
+      setPhase("idle");
+      setProgress("Not enough agents online");
+      return;
+    }
+
+    const pairs: [number, number][] = [];
+    if (topology === "ring") {
+      for (let i = 0; i < agents.length; i++) {
+        pairs.push([i, (i + 1) % agents.length]);
+      }
+    } else if (topology === "mesh") {
+      for (let i = 0; i < agents.length; i++) {
+        for (let j = i + 1; j < agents.length; j++) {
+          pairs.push([i, j]);
+        }
+      }
+    } else {
+      // Random: each node connects to 1-2 random peers
+      const connected = new Set<string>();
+      for (let i = 0; i < agents.length; i++) {
+        const numConnections = randInt(1, Math.min(2, agents.length - 1));
+        for (let c = 0; c < numConnections; c++) {
+          let j = randInt(0, agents.length - 1);
+          while (j === i) j = randInt(0, agents.length - 1);
+          const key = [Math.min(i, j), Math.max(i, j)].join("-");
+          if (!connected.has(key)) {
+            connected.add(key);
+            pairs.push([i, j]);
+          }
+        }
+      }
+    }
+
+    for (let p = 0; p < pairs.length; p++) {
+      if (cancelRef.current) { setPhase("idle"); return; }
+      const [si, ri] = pairs[p];
+      const sender = agents[si];
+      const receiver = agents[ri];
+      if (!sender?.identity?.peer_id || !receiver?.identity?.peer_id || !receiver?.identity?.eth_address) continue;
+
+      // Check if channel already exists between them
+      const alreadyConnected = sender.channels.some(
+        (c) => c.state === "ACTIVE" && c.sender === sender.identity?.eth_address && c.peer_id === receiver.identity?.peer_id
+      );
+      if (alreadyConnected) continue;
+
+      setProgress(`Channel ${p + 1}/${pairs.length}: ${lbl(sender)} → ${lbl(receiver)}`);
+
+      // Connect peer
+      const addrs = receiver.identity.addrs ?? [];
+      const tcp = addrs.find((a) => a.includes("/tcp/") && !a.includes("/ws"));
+      if (tcp) {
+        const addr = tcp.replace("/ip4/0.0.0.0/", "/ip4/127.0.0.1/");
+        const full = addr.includes("/p2p/") ? addr : `${addr}/p2p/${receiver.identity.peer_id}`;
+        try { await sender.api.connectPeer(full); } catch {}
+      }
+
+      // Open channel
+      try {
+        await sender.api.openChannel(receiver.identity.peer_id, receiver.identity.eth_address, dep);
+        pushEvent({ type: "channel_open", from: lbl(sender), message: `Opened channel to ${lbl(receiver)}`, meta: `Deposit: ${dep.toLocaleString()} wei` });
+        sender.refresh();
+        receiver.refresh();
+      } catch (e) {
+        pushEvent({ type: "status", from: lbl(sender), message: `Channel failed: ${e instanceof Error ? e.message : "error"}` });
+      }
+      await sleep(500);
+    }
+
+    setProgress("Channels ready");
+    await sleep(500);
+
+    // Phase 3: Run random payments
+    setPhase("simulating");
+    const knownChannels = collectKnownChannels();
+
+    for (let r = 0; r < rounds; r++) {
+      if (cancelRef.current) { setPhase("idle"); return; }
+      setProgress(`Payment ${r + 1}/${rounds}`);
+
+      const amount = randInt(lo, hi);
+
+      // Pick random sender that has active outbound channels
+      const sendersWithChannels = agents.filter((a) =>
+        a.channels.some((c) => c.state === "ACTIVE" && c.sender === a.identity?.eth_address && c.remaining_balance > amount)
+      );
+      if (sendersWithChannels.length === 0) {
+        pushEvent({ type: "status", from: "Sim", message: `Round ${r + 1}: No agents with sufficient balance` });
+        continue;
+      }
+
+      const sender = sendersWithChannels[randInt(0, sendersWithChannels.length - 1)];
+      const senderPid = sender.identity?.peer_id;
+
+      // Decide: direct or routed payment
+      const directChannels = sender.channels.filter(
+        (c) => c.state === "ACTIVE" && c.sender === sender.identity?.eth_address && c.remaining_balance > amount
+      );
+
+      const useDirect = directChannels.length > 0 && (Math.random() < 0.6 || agents.length <= 2);
+
+      if (useDirect) {
+        // Direct payment
+        const ch = directChannels[randInt(0, directChannels.length - 1)];
+        const receiverAgent = agents.find((a) => a.identity?.eth_address === ch.receiver);
+        const rPid = receiverAgent?.identity?.peer_id;
+
+        // Animate
+        if (senderPid && rPid) {
+          setLoadingNodes([{ peerId: senderPid, color: "#34d399" }, { peerId: rPid, color: "#34d399" }]);
+          setAnimatingRoute({ hops: [senderPid, rPid], color: "#34d399", type: "payment" });
+        }
+
+        try {
+          await sender.api.sendPayment(ch.channel_id, amount);
+          pushEvent({ type: "payment", from: lbl(sender), message: `Sent ${amount.toLocaleString()} wei to ${receiverAgent ? lbl(receiverAgent) : "peer"}` });
+          sender.refresh();
+        } catch (e) {
+          pushEvent({ type: "status", from: lbl(sender), message: `Direct pay failed: ${e instanceof Error ? e.message : "error"}` });
+        }
+      } else {
+        // Routed payment (HTLC)
+        const otherAgents = agents.filter((a) => a.identity?.peer_id !== senderPid && a.identity?.peer_id);
+        if (otherAgents.length === 0) continue;
+        const receiver = otherAgents[randInt(0, otherAgents.length - 1)];
+        const rPid = receiver.identity!.peer_id!;
+
+        if (senderPid && rPid) {
+          setLoadingNodes([{ peerId: senderPid, color: "#f59e0b" }, { peerId: rPid, color: "#f59e0b" }]);
+          setAnimatingRoute({ hops: [senderPid, rPid], color: "#f59e0b", type: "payment" });
+        }
+
+        try {
+          const res = await sender.api.routePayment(rPid!, amount, knownChannels);
+          const hops = res.payment.route.hop_count;
+          pushEvent({ type: "payment", from: lbl(sender), message: `Routed ${amount.toLocaleString()} wei to ${lbl(receiver)} (${hops} hops)` });
+          sender.refresh();
+          receiver.refresh();
+        } catch (e) {
+          pushEvent({ type: "status", from: lbl(sender), message: `Route pay failed: ${e instanceof Error ? e.message : "error"}` });
+        }
+      }
+
+      setLoadingNodes([]);
+      setAnimatingRoute(null);
+      await sleep(800);
+    }
+
+    setPhase("done");
+    setProgress(`Simulation complete: ${rounds} payments`);
+    pushEvent({ type: "status", from: "Sim", message: `Simulation finished — ${rounds} payment rounds` });
+  };
+
+  return (
+    <div className="rounded-lg border border-accent/20 bg-accent/[0.03] p-3 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <h4 className="text-[10px] font-semibold uppercase tracking-widest text-accent">Simulation</h4>
+          {phase !== "idle" && phase !== "done" && (
+            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+          )}
+        </div>
+        {(phase === "spawning" || phase === "connecting" || phase === "simulating") && (
+          <button onClick={() => { cancelRef.current = true; }} className="text-[9px] text-danger hover:text-danger/80 font-medium">
+            Cancel
+          </button>
+        )}
+      </div>
+
+      {/* Agent Naming */}
+      <details open={editingNames} onToggle={(e) => setEditingNames((e.target as HTMLDetailsElement).open)}>
+        <summary className="text-[9px] font-semibold uppercase tracking-widest text-text-muted cursor-pointer hover:text-text-secondary transition-colors">
+          Agent Names
+        </summary>
+        <div className="mt-1.5 space-y-1">
+          {allAgents.map((a, i) => {
+            const port = manager.agents[i]?.apiPort ?? 8080 + i;
+            return (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: AGENT_COLORS[i % AGENT_COLORS.length] }} />
+                <input
+                  className="flex-1 h-5 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring"
+                  value={agentNames.get(port) ?? agentLabel(i)}
+                  onChange={(e) => setAgentNames((prev) => new Map(prev).set(port, e.target.value))}
+                  placeholder={agentLabel(i)}
+                />
+                <span className="text-[8px] text-text-muted font-mono">:{port}</span>
+              </div>
+            );
+          })}
+          {allAgents.length === 0 && <p className="text-[9px] text-text-muted italic">No agents running</p>}
+        </div>
+      </details>
+
+      {/* Controls */}
+      <div className="space-y-1.5">
+        <div className="flex gap-1.5">
+          <div className="flex-1">
+            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Nodes</label>
+            <input value={nodeCount} onChange={(e) => setNodeCount(e.target.value)} type="number" min="2" max="20"
+              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+          </div>
+          <div className="flex-1">
+            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Topology</label>
+            <select value={topology} onChange={(e) => setTopology(e.target.value as typeof topology)}
+              className="w-full h-6 bg-surface-overlay border border-border rounded px-1 text-[10px] text-text-primary focus-ring appearance-none">
+              <option value="ring">Ring</option>
+              <option value="mesh">Mesh</option>
+              <option value="random">Random</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-1.5">
+          <div className="flex-1">
+            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Deposit/ch</label>
+            <input value={deposit} onChange={(e) => setDeposit(e.target.value)} type="number" min="1000"
+              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+          </div>
+          <div className="flex-1">
+            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Rounds</label>
+            <input value={paymentRounds} onChange={(e) => setPaymentRounds(e.target.value)} type="number" min="1" max="100"
+              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+          </div>
+        </div>
+
+        <div className="flex gap-1.5">
+          <div className="flex-1">
+            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Min pay</label>
+            <input value={minPay} onChange={(e) => setMinPay(e.target.value)} type="number" min="1"
+              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+          </div>
+          <div className="flex-1">
+            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Max pay</label>
+            <input value={maxPay} onChange={(e) => setMaxPay(e.target.value)} type="number" min="1"
+              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+          </div>
+        </div>
+      </div>
+
+      {/* Progress */}
+      {progress && (
+        <div className={`text-[9px] px-2 py-1 rounded font-mono ${
+          phase === "done" ? "bg-success/10 text-success" :
+          phase === "idle" ? "bg-surface-overlay text-text-muted" :
+          "bg-accent/10 text-accent"
+        }`}>
+          {progress}
+        </div>
+      )}
+
+      {/* Action button */}
+      <Button
+        onClick={runSimulation}
+        disabled={phase === "spawning" || phase === "connecting" || phase === "simulating"}
+        size="sm"
+        className="w-full h-7 text-[10px] bg-accent/90 hover:bg-accent text-white font-semibold"
+      >
+        {phase === "spawning" ? "Spawning Nodes..." :
+         phase === "connecting" ? "Opening Channels..." :
+         phase === "simulating" ? "Running Payments..." :
+         phase === "done" ? "Run Again" :
+         "Run Simulation"}
+      </Button>
     </div>
   );
 }

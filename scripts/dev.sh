@@ -107,8 +107,9 @@ TAG_A="${GREEN}[A]${NC}"
 TAG_B="${BLUE}[B]${NC}"
 TAG_UI="${PURPLE}[UI]${NC}"
 
-# Log filter — extracts clean "METHOD /route → STATUS" from Hypercorn access logs,
-# passes through app-level structlog lines, drops noise (OPTIONS, browser UA strings).
+# Log filter — formats Hypercorn access logs into METHOD /route STATUS,
+# passes structlog output through verbatim (preserving ANSI colors),
+# drops noise (OPTIONS preflights, browser UA strings, raw IP lines).
 filter_agent_log() {
   local tag="$1"
   while IFS= read -r line; do
@@ -116,35 +117,29 @@ filter_agent_log() {
     if [[ "$line" == *'"OPTIONS '* ]]; then
       continue
     fi
+    # Skip raw Hypercorn IP-only access log noise (127.0.0.1:PORT - ...)
+    if [[ "$line" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+\ -\  ]]; then
+      continue
+    fi
     # Match Hypercorn access log: ... "METHOD /route 1.1" STATUS SIZE ...
     if [[ "$line" =~ \"(GET|POST|PUT|DELETE|PATCH)\ (/[^\ ]*)\ [^\"]*\"\ ([0-9]+)\ ([0-9]+) ]]; then
       local method="${BASH_REMATCH[1]}"
       local route="${BASH_REMATCH[2]}"
       local status="${BASH_REMATCH[3]}"
-      # Color status code
       local status_color="$GREEN"
       if [[ "$status" =~ ^4 ]]; then status_color="$YELLOW"
       elif [[ "$status" =~ ^5 ]]; then status_color="$RED"; fi
       printf '  %s %s%-4s%s %-20s %s%s%s\n' "$tag" "$DIM" "$method" "$NC" "$route" "$status_color" "$status" "$NC"
-    # Pass through app-level log lines (structlog / startup messages)
-    elif [[ "$line" == *"[INFO]"* && "$line" != *"127.0.0.1:"* ]] || \
-         [[ "$line" == *"[WARNING]"* ]] || \
-         [[ "$line" == *"[ERROR]"* ]] || \
-         [[ "$line" == *"[DEBUG]"* ]] || \
-         [[ "$line" == *"event="* ]] || \
+    # Pass structlog lines through verbatim (they already have ANSI colors)
+    elif [[ "$line" == *"│"* ]]; then
+      printf '  %s %s\n' "$tag" "$line"
+    # Pass through other important lines (startup, Hypercorn [INFO], etc)
+    elif [[ "$line" == *"Running"* ]] || \
          [[ "$line" == *"Started"* ]] || \
          [[ "$line" == *"Listening"* ]] || \
-         [[ "$line" == *"mDNS"* ]] || \
-         [[ "$line" == *"channel"* ]] || \
-         [[ "$line" == *"peer"* ]] || \
-         [[ "$line" == *"payment"* ]] || \
-         [[ "$line" == *"Running"* ]]; then
-      # Strip timestamp/PID prefix for cleaner output if it matches Hypercorn format
-      local clean="$line"
-      if [[ "$line" =~ \[INFO\]\ (.*) ]]; then
-        clean="${BASH_REMATCH[1]}"
-      fi
-      printf '  %s %s\n' "$tag" "$clean"
+         [[ "$line" == *"[WARNING]"* ]] || \
+         [[ "$line" == *"[ERROR]"* ]]; then
+      printf '  %s %s\n' "$tag" "$line"
     fi
   done
 }

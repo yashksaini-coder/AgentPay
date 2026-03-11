@@ -23,6 +23,7 @@ from agentic_payments.protocol.messages import (
 
 if TYPE_CHECKING:
     from agentic_payments.payments.manager import ChannelManager
+    from agentic_payments.routing.htlc import HtlcManager
 
 logger = structlog.get_logger(__name__)
 
@@ -38,8 +39,23 @@ class PaymentProtocolHandler:
     and responses are written back on the same stream.
     """
 
-    def __init__(self, channel_manager: ChannelManager) -> None:
+    def __init__(
+        self,
+        channel_manager: ChannelManager,
+        htlc_manager: HtlcManager | None = None,
+        on_htlc_propose: Any = None,
+        on_htlc_fulfill: Any = None,
+        on_htlc_cancel: Any = None,
+        on_channel_opened: Any = None,
+    ) -> None:
         self.channel_manager = channel_manager
+        self.htlc_manager = htlc_manager
+        # Callbacks for HTLC events (set by AgentNode for forwarding logic)
+        self._on_htlc_propose = on_htlc_propose
+        self._on_htlc_fulfill = on_htlc_fulfill
+        self._on_htlc_cancel = on_htlc_cancel
+        # Callback when a channel is accepted (receiver side)
+        self._on_channel_opened = on_channel_opened
 
     async def handle_stream(self, stream: NetStream) -> None:
         """Handle an incoming libp2p stream for the payment protocol.
@@ -103,6 +119,12 @@ class PaymentProtocolHandler:
                 return await self._handle_close(msg, remote_peer)
             case MessageType.PAYMENT_ACK:
                 return None  # ACKs are terminal
+            case MessageType.HTLC_PROPOSE:
+                return await self._handle_htlc_propose(msg, remote_peer)
+            case MessageType.HTLC_FULFILL:
+                return await self._handle_htlc_fulfill(msg, remote_peer)
+            case MessageType.HTLC_CANCEL:
+                return await self._handle_htlc_cancel(msg, remote_peer)
             case _:
                 return MessageType.ERROR, ErrorMessage(
                     code=1, message=f"Unsupported message type: {msg_type}"
@@ -111,7 +133,13 @@ class PaymentProtocolHandler:
     async def _handle_open(self, msg: Any, remote_peer: str) -> tuple[MessageType, Any]:
         """Handle a PaymentOpen request."""
         try:
-            await self.channel_manager.handle_open_request(msg, remote_peer)
+            channel = await self.channel_manager.handle_open_request(msg, remote_peer)
+            # Notify AgentNode so it can announce the channel for routing
+            if self._on_channel_opened is not None:
+                try:
+                    await self._on_channel_opened(channel)
+                except Exception:
+                    logger.warning("channel_opened_callback_error", exc_info=True)
             return MessageType.PAYMENT_ACK, PaymentAck(
                 channel_id=msg.channel_id,
                 nonce=msg.nonce,
@@ -185,3 +213,46 @@ class PaymentProtocolHandler:
                 status="rejected",
                 reason="Internal error",
             )
+
+    async def _handle_htlc_propose(
+        self, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle an incoming HTLC proposal (multi-hop forwarding)."""
+        if self._on_htlc_propose is None:
+            return MessageType.ERROR, ErrorMessage(
+                code=2, message="HTLC routing not supported"
+            )
+        try:
+            return await self._on_htlc_propose(msg, remote_peer)
+        except Exception:
+            logger.exception("htlc_propose_error", remote_peer=remote_peer)
+            from agentic_payments.protocol.messages import HtlcCancel
+            return MessageType.HTLC_CANCEL, HtlcCancel(
+                channel_id=msg.channel_id,
+                htlc_id=msg.htlc_id,
+                reason="Internal error processing HTLC",
+            )
+
+    async def _handle_htlc_fulfill(
+        self, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle an HTLC fulfill (preimage revealed by downstream)."""
+        if self._on_htlc_fulfill is None:
+            return None
+        try:
+            return await self._on_htlc_fulfill(msg, remote_peer)
+        except Exception:
+            logger.exception("htlc_fulfill_error", remote_peer=remote_peer)
+            return None
+
+    async def _handle_htlc_cancel(
+        self, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle an HTLC cancellation from downstream."""
+        if self._on_htlc_cancel is None:
+            return None
+        try:
+            return await self._on_htlc_cancel(msg, remote_peer)
+        except Exception:
+            logger.exception("htlc_cancel_error", remote_peer=remote_peer)
+            return None

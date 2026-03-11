@@ -156,6 +156,13 @@ class ChannelManager:
             raise ValueError("Payment amount must be positive")
 
         channel = self.get_channel(channel_id)
+
+        if channel.sender != self.local_address:
+            raise ValueError(
+                "Only the channel sender can send payments. "
+                f"This node ({self.local_address[:10]}...) is the receiver, "
+                f"not the sender ({channel.sender[:10]}...)."
+            )
         new_nonce = channel.nonce + 1
         new_total = channel.total_paid + amount
 

@@ -48,6 +48,7 @@ class PaymentChannel:
     updated_at: int = field(default_factory=lambda: int(time.time()))
     latest_voucher: SignedVoucher | None = None
     peer_id: str = ""
+    pending_htlc_amount: int = 0  # Wei locked in pending HTLCs
 
     def __post_init__(self) -> None:
         """Validate channel fields at construction time."""
@@ -135,6 +136,27 @@ class PaymentChannel:
         """Transition to disputed state."""
         self._transition({ChannelState.ACTIVE, ChannelState.CLOSING}, ChannelState.DISPUTED)
 
+    def lock_htlc(self, amount: int) -> None:
+        """Lock funds for a pending HTLC."""
+        if self.state != ChannelState.ACTIVE:
+            raise ChannelError(f"Cannot lock HTLC in state {self.state.name}")
+        if amount > self.available_balance:
+            raise ChannelError(
+                f"Insufficient balance: need {amount}, available {self.available_balance}"
+            )
+        self.pending_htlc_amount += amount
+        self.updated_at = int(time.time())
+
+    def unlock_htlc(self, amount: int) -> None:
+        """Unlock funds from a resolved/cancelled HTLC."""
+        self.pending_htlc_amount = max(0, self.pending_htlc_amount - amount)
+        self.updated_at = int(time.time())
+
+    @property
+    def available_balance(self) -> int:
+        """Balance available for new payments/HTLCs (excludes locked funds)."""
+        return self.total_deposit - self.total_paid - self.pending_htlc_amount
+
     @property
     def remaining_balance(self) -> int:
         """Remaining balance available for payments."""
@@ -151,6 +173,8 @@ class PaymentChannel:
             "nonce": self.nonce,
             "total_paid": self.total_paid,
             "remaining_balance": self.remaining_balance,
+            "available_balance": self.available_balance,
+            "pending_htlc_amount": self.pending_htlc_amount,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "peer_id": self.peer_id,

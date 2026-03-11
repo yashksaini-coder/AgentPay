@@ -17,6 +17,7 @@ from libp2p.pubsub.pubsub import Pubsub
 from agentic_payments.pubsub.topics import (
     ALL_TOPICS,
     TOPIC_AGENT_CAPABILITIES,
+    TOPIC_CHANNEL_ANNOUNCEMENTS,
     TOPIC_PAYMENT_RECEIPTS,
 )
 
@@ -134,5 +135,15 @@ class PubsubBroadcaster:
             {
                 "type": "receipt",
                 "data": receipt,
+            },
+        )
+
+    async def broadcast_channel(self, channel_info: dict) -> None:
+        """Announce a channel on the network for routing topology discovery."""
+        await self.publish(
+            TOPIC_CHANNEL_ANNOUNCEMENTS,
+            {
+                "type": "channel_announce",
+                "data": channel_info,
             },
         )

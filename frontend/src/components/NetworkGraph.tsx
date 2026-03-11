@@ -40,6 +40,12 @@ export interface GraphInteraction {
   channelId?: string;
 }
 
+export interface AnimatingRoute {
+  hops: string[];
+  color: string;
+  type: "payment" | "channel";
+}
+
 // ── Color Palettes ────────────────────────────────────────
 const AGENT_COLORS = [
   "#7c6df0", "#34d399", "#f59e0b", "#ec4899",
@@ -64,13 +70,22 @@ function linkArc(sx: number, sy: number, tx: number, ty: number, curvature: numb
   return `M${sx},${sy}Q${mx},${my},${tx},${ty}`;
 }
 
-function quadMid(sx: number, sy: number, tx: number, ty: number, curvature: number) {
-  if (curvature === 0) return { x: (sx + tx) / 2, y: (sy + ty) / 2 };
+/** Get a point along a quadratic bezier at parameter t (0-1). */
+function quadPoint(sx: number, sy: number, tx: number, ty: number, curvature: number, t: number) {
+  if (curvature === 0) return { x: sx + (tx - sx) * t, y: sy + (ty - sy) * t };
   const dx = tx - sx, dy = ty - sy;
   const dr = Math.sqrt(dx * dx + dy * dy) || 1;
   const cx = (sx + tx) / 2 + (-dy / dr) * curvature;
   const cy = (sy + ty) / 2 + (dx / dr) * curvature;
-  return { x: 0.25 * sx + 0.5 * cx + 0.25 * tx, y: 0.25 * sy + 0.5 * cy + 0.25 * ty };
+  const u = 1 - t;
+  return {
+    x: u * u * sx + 2 * u * t * cx + t * t * tx,
+    y: u * u * sy + 2 * u * t * cy + t * t * ty,
+  };
+}
+
+function quadMid(sx: number, sy: number, tx: number, ty: number, curvature: number) {
+  return quadPoint(sx, sy, tx, ty, curvature, 0.5);
 }
 
 function curvatureForIndex(i: number, n: number): number {
@@ -80,14 +95,22 @@ function curvatureForIndex(i: number, n: number): number {
   return (i - center) * spacing;
 }
 
+// ── Constants ────────────────────────────────────────────
+const CHANNEL_PARTICLES = 3;     // particles per channel link
+const P2P_PARTICLES = 2;         // particles per p2p link
+const CHANNEL_SPEED = 2400;      // ms for one full traverse
+const P2P_SPEED = 4000;          // ms for one full traverse (slower, subtler)
+
 // ── Component ─────────────────────────────────────────────
 export default function NetworkGraph({
   agents,
   loadingNodes = [],
+  animatingRoute,
   onInteraction,
 }: {
   agents: AgentState[];
   loadingNodes?: LoadingNode[];
+  animatingRoute?: AnimatingRoute | null;
   onInteraction?: (interaction: GraphInteraction) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -99,7 +122,7 @@ export default function NetworkGraph({
   const onInteractionRef = useRef(onInteraction);
   onInteractionRef.current = onInteraction;
 
-  // ── Transfer border animation ──
+  // ── Loading node border animation (action-triggered overlay) ──
   const activeTimersRef = useRef<Map<string, d3.Timer>>(new Map());
   const FILL_DURATION = 1800;
 
@@ -176,7 +199,6 @@ export default function NetworkGraph({
     const agentPeerIds = new Set<string>();
 
     agents.forEach((agent, i) => {
-      // Skip agents that haven't loaded identity yet — avoids grey ghost dots
       const pid = agent.identity?.peer_id;
       if (!pid) return;
       agentPeerIds.add(pid);
@@ -344,6 +366,15 @@ export default function NetworkGraph({
       m.append("feMergeNode").attr("in", "SourceGraphic");
     });
 
+    // Particle glow filter (shared)
+    const pg = defs.append("filter").attr("id", "particle-glow").attr("x", "-150%").attr("y", "-150%").attr("width", "400%").attr("height", "400%");
+    pg.append("feGaussianBlur").attr("stdDeviation", "3").attr("result", "blur");
+    pg.append("feFlood").attr("flood-color", "white").attr("flood-opacity", "0.5");
+    pg.append("feComposite").attr("in2", "blur").attr("operator", "in");
+    const pgm = pg.append("feMerge");
+    pgm.append("feMergeNode");
+    pgm.append("feMergeNode").attr("in", "SourceGraphic");
+
     // --- Zoom/Pan ---
     const zoomG = svg.append("g").attr("class", "zoom-container");
 
@@ -494,6 +525,56 @@ export default function NetworkGraph({
       }
     });
 
+    // ── Continuous particle layer (always-on flow animation) ──
+    const particleG = zoomG.append("g").attr("class", "particles").style("pointer-events", "none");
+
+    // Build particle data per link
+    type ParticleInfo = {
+      link: GraphLink;
+      index: number;       // which particle on this link (0..n-1)
+      count: number;       // total particles on this link
+      speed: number;       // ms for full traverse
+      radius: number;
+      color: string;
+      opacity: number;
+    };
+    const particleData: ParticleInfo[] = [];
+    for (const link of links) {
+      if (link.type === "channel") {
+        for (let p = 0; p < CHANNEL_PARTICLES; p++) {
+          particleData.push({
+            link,
+            index: p,
+            count: CHANNEL_PARTICLES,
+            speed: CHANNEL_SPEED + (p * 200),  // slight speed variation
+            radius: 2.5,
+            color: link.channelColor || "#fbbf24",
+            opacity: 0.85,
+          });
+        }
+      } else if (link.type === "p2p") {
+        for (let p = 0; p < P2P_PARTICLES; p++) {
+          particleData.push({
+            link,
+            index: p,
+            count: P2P_PARTICLES,
+            speed: P2P_SPEED + (p * 600),
+            radius: 1.5,
+            color: "rgba(255,255,255,0.6)",
+            opacity: 0.35,
+          });
+        }
+      }
+    }
+
+    const particleSel = particleG.selectAll<SVGCircleElement, ParticleInfo>("circle")
+      .data(particleData)
+      .join("circle")
+      .attr("r", (d) => d.radius)
+      .attr("fill", (d) => d.color)
+      .attr("opacity", 0)
+      .attr("filter", (d) => d.link.type === "channel" ? "url(#particle-glow)" : null);
+
     // --- Nodes ---
     const nodeG = zoomG.append("g").attr("class", "nodes");
     const nodeSel = nodeG.selectAll<SVGGElement, GraphNode>("g")
@@ -565,7 +646,6 @@ export default function NetworkGraph({
       const prevSelected = selectedNodeRef.current;
 
       if (prevSelected && prevSelected !== d.id) {
-        // Second click → fire interaction
         if (onInteractionRef.current) {
           onInteractionRef.current({
             type: "node-pair",
@@ -573,15 +653,12 @@ export default function NetworkGraph({
             targetPeerId: d.id,
           });
         }
-        // Clear selection
         selectedNodeRef.current = null;
         nodeG.selectAll(".select-ring").transition().duration(200).attr("opacity", 0);
       } else if (prevSelected === d.id) {
-        // Deselect
         selectedNodeRef.current = null;
         d3.select(this).select(".select-ring").transition().duration(200).attr("opacity", 0);
       } else {
-        // First click → select
         selectedNodeRef.current = d.id;
         nodeG.selectAll(".select-ring").transition().duration(200).attr("opacity", 0);
         d3.select(this).select(".select-ring").transition().duration(200).attr("opacity", 0.7);
@@ -652,15 +729,51 @@ export default function NetworkGraph({
       .attr("class", "node-circle");
     peerSel.append("title").text((d) => d.label);
 
-    // --- Breathing animation ---
-    const breathe = d3.timer((elapsed) => {
+    // ── Continuous animation timer ──────────────────────────
+    // Runs permanently: breathing rings, dash flow, particle flow
+    const animStartTime = Date.now();
+
+    const animate = d3.timer((elapsed) => {
+      // Breathing
       const scale = 1 + 0.08 * Math.sin(elapsed / 1200);
-      const opacity = 0.08 + 0.04 * Math.sin(elapsed / 1200);
+      const breatheOp = 0.08 + 0.04 * Math.sin(elapsed / 1200);
       agentSel.selectAll(".pulse-ring")
-        .attr("r", 34 * scale).attr("opacity", opacity);
+        .attr("r", 34 * scale).attr("opacity", breatheOp);
+
+      // Channel link glow pulse (subtle brightness oscillation)
+      const glowPulse = 0.6 + 0.15 * Math.sin(elapsed / 2000);
+      linkPath.filter((l) => l.type === "channel")
+        .attr("stroke-opacity", glowPulse);
+
+      // Particle flow along links
+      const now = Date.now();
+      particleSel.each(function(d) {
+        const s = d.link.source as GraphNode;
+        const t = d.link.target as GraphNode;
+        if (s.x == null || s.y == null || t.x == null || t.y == null) return;
+
+        const curv = curvatureForIndex(d.link.linkIndex || 0, d.link.linkCount || 1);
+
+        // Stagger particles evenly across the path
+        const offset = d.index / d.count;
+        const param = ((now - animStartTime) / d.speed + offset) % 1;
+
+        const pos = quadPoint(s.x, s.y, t.x, t.y, curv, param);
+
+        // Fade at endpoints
+        const fadeZone = 0.08;
+        let op = d.opacity;
+        if (param < fadeZone) op *= param / fadeZone;
+        else if (param > 1 - fadeZone) op *= (1 - param) / fadeZone;
+
+        d3.select(this)
+          .attr("cx", pos.x)
+          .attr("cy", pos.y)
+          .attr("opacity", op);
+      });
     });
 
-    // --- Tick ---
+    // --- Tick (simulation layout updates) ---
     let dashOffset = 0;
     sim.on("tick", () => {
       const hitPathsSel = linkG.selectAll<SVGPathElement, GraphLink>("path.link-hit");
@@ -701,16 +814,20 @@ export default function NetworkGraph({
 
     return () => {
       sim.stop();
-      breathe.stop();
+      animate.stop();
     };
   }, [nodes, links]);
+
+  const renderRef = useRef(render);
+  renderRef.current = render;
 
   useEffect(() => {
     if (dataKey === prevDataRef.current) return;
     prevDataRef.current = dataKey;
-    const cleanup = render();
+    const cleanup = renderRef.current();
     return cleanup;
-  }, [dataKey, render]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey]);
 
   useEffect(() => {
     const observer = new ResizeObserver(() => { prevDataRef.current = ""; });

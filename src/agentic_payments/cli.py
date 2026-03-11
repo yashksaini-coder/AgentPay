@@ -23,28 +23,164 @@ app.add_typer(channel_app, name="channel")
 
 
 def _setup_logging(level: str = "INFO", fmt: str = "console") -> None:
-    """Configure structlog."""
+    """Configure structlog with color-coded output.
+
+    Uses ANSI colors inspired by Wireshark-style log output:
+    - Timestamps: dim gray
+    - Level: colored per severity (green/cyan/yellow/red/bold red)
+    - Logger name: dim
+    - Event: bright white
+    - Key-value pairs: colored by type
+    """
     import logging
+    import sys
 
     numeric_level = logging.getLevelNamesMapping().get(level.upper(), logging.INFO)
+
+    if fmt == "console" and sys.stderr.isatty():
+        renderer = _ColorRenderer()
+    elif fmt == "console":
+        renderer = structlog.dev.ConsoleRenderer(colors=False)
+    else:
+        renderer = structlog.processors.JSONRenderer()
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.StackInfoRenderer(),
             structlog.dev.set_exc_info,
-            structlog.processors.TimeStamper(fmt="iso"),
-            (
-                structlog.dev.ConsoleRenderer()
-                if fmt == "console"
-                else structlog.processors.JSONRenderer()
-            ),
+            structlog.processors.TimeStamper(fmt="%H:%M:%S.%f"),
+            _abbreviate_logger_name,
+            renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
+
+# ── ANSI escape helpers ────────────────────────────────────────
+
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+_ITALIC = "\033[3m"
+
+_FG_BLACK = "\033[30m"
+_FG_RED = "\033[31m"
+_FG_GREEN = "\033[32m"
+_FG_YELLOW = "\033[33m"
+_FG_BLUE = "\033[34m"
+_FG_MAGENTA = "\033[35m"
+_FG_CYAN = "\033[36m"
+_FG_WHITE = "\033[37m"
+_FG_BRIGHT_RED = "\033[91m"
+_FG_BRIGHT_GREEN = "\033[92m"
+_FG_BRIGHT_YELLOW = "\033[93m"
+_FG_BRIGHT_CYAN = "\033[96m"
+_FG_BRIGHT_WHITE = "\033[97m"
+
+_BG_RED = "\033[41m"
+_BG_YELLOW = "\033[43m"
+
+_LEVEL_STYLES: dict[str, str] = {
+    "debug": f"{_DIM}{_FG_CYAN}",
+    "info": f"{_FG_BRIGHT_GREEN}",
+    "warning": f"{_BOLD}{_FG_BRIGHT_YELLOW}",
+    "error": f"{_BOLD}{_FG_BRIGHT_RED}",
+    "critical": f"{_BOLD}{_BG_RED}{_FG_WHITE}",
+}
+
+# Event name keywords → highlight color
+_EVENT_HIGHLIGHTS: dict[str, str] = {
+    "payment": _FG_BRIGHT_GREEN,
+    "channel": _FG_BRIGHT_CYAN,
+    "htlc": _FG_BRIGHT_YELLOW,
+    "peer": _FG_BLUE,
+    "error": _FG_BRIGHT_RED,
+    "started": _FG_BRIGHT_GREEN,
+    "stopped": _FG_RED,
+    "route": _FG_MAGENTA,
+    "voucher": _FG_GREEN,
+    "stream": _FG_CYAN,
+    "pubsub": _FG_BLUE,
+}
+
+
+def _abbreviate_logger_name(
+    logger: object, method_name: str, event_dict: dict,
+) -> dict:
+    """Shorten module paths: agentic_payments.node.agent_node → node.agent_node."""
+    if "_logger" in event_dict:
+        name = str(event_dict["_logger"])
+        name = name.replace("agentic_payments.", "")
+        event_dict["_logger"] = name
+    return event_dict
+
+
+class _ColorRenderer:
+    """Custom structlog renderer with Wireshark-inspired color-coded output.
+
+    Format: HH:MM:SS.fff │ LEVEL    module          event_name  key=value key=value
+    """
+
+    def __call__(self, logger: object, method_name: str, event_dict: dict) -> str:
+        # Extract standard fields
+        ts = event_dict.pop("timestamp", "")
+        level = event_dict.pop("log_level", method_name)
+        event = event_dict.pop("event", "")
+        logger_name = event_dict.pop("_logger", "")
+
+        # Timestamp — dim
+        ts_str = f"{_DIM}{ts[:12]}{_RESET}" if ts else ""
+
+        # Level — colored, padded
+        level_upper = level.upper()
+        level_style = _LEVEL_STYLES.get(level, _FG_WHITE)
+        level_str = f"{level_style}{level_upper:<8}{_RESET}"
+
+        # Logger name — dim, truncated
+        mod = str(logger_name)[-20:] if logger_name else ""
+        mod_str = f"{_DIM}{mod:<20}{_RESET}" if mod else ""
+
+        # Event name — highlight if it contains a known keyword
+        event_style = _FG_BRIGHT_WHITE
+        event_lower = str(event).lower()
+        for keyword, style in _EVENT_HIGHLIGHTS.items():
+            if keyword in event_lower:
+                event_style = style
+                break
+        event_str = f"{event_style}{_BOLD}{event}{_RESET}"
+
+        # Key-value pairs — colored by type
+        kv_parts = []
+        for k, v in event_dict.items():
+            if k.startswith("_"):
+                continue
+            val = _format_value(v)
+            kv_parts.append(f"{_DIM}{k}={_RESET}{_FG_CYAN}{val}{_RESET}")
+
+        kv_str = "  ".join(kv_parts)
+
+        # Assemble
+        parts = [ts_str, "│", level_str, mod_str, event_str]
+        if kv_str:
+            parts.append(f" {kv_str}")
+
+        return " ".join(p for p in parts if p)
+
+
+def _format_value(v: object) -> str:
+    """Format a log value for display."""
+    if isinstance(v, bytes):
+        return v.hex()[:16] + ("…" if len(v) > 8 else "")
+    if isinstance(v, str) and len(v) > 40:
+        return v[:37] + "..."
+    if isinstance(v, list) and len(v) > 3:
+        return f"[{len(v)} items]"
+    return str(v)
 
 
 @app.command()

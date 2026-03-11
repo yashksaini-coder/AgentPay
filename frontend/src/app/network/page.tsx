@@ -4,9 +4,9 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useAgent, type AgentState } from "@/lib/useAgent";
 import { useNetworkEvents, type NetworkEvent } from "@/lib/useNetworkEvents";
 import { useAgentManager } from "@/lib/useAgentManager";
-import { formatWei, shortenAddr, shortenId } from "@/lib/api";
+import { formatWei, shortenAddr, shortenId, type Channel } from "@/lib/api";
 import Nav from "@/components/Nav";
-import NetworkGraph, { type LoadingNode, type GraphInteraction } from "@/components/NetworkGraph";
+import NetworkGraph, { type LoadingNode, type GraphInteraction, type AnimatingRoute } from "@/components/NetworkGraph";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
@@ -35,6 +35,7 @@ export default function NetworkPage() {
   const manager = useAgentManager();
   const initRef = useRef(false);
   const [loadingNodes, setLoadingNodes] = useState<LoadingNode[]>([]);
+  const [animatingRoute, setAnimatingRoute] = useState<AnimatingRoute | null>(null);
 
   // All agents tracked uniformly
   const [agentStates, setAgentStates] = useState<Map<number, AgentState>>(new Map());
@@ -108,9 +109,32 @@ export default function NetworkPage() {
   const totalRemaining = allAgents.reduce((s, a) => s + (a.balance?.total_remaining ?? 0), 0);
   const totalPeers = allAgents.reduce((s, a) => s + a.peers.length, 0);
 
-  // ── Graph interaction: click-to-connect & click-channel-to-pay ──
+  // Collect all known channels from all agents for route-pay graph seeding
+  const collectKnownChannels = useCallback(() => {
+    const seen = new Set<string>();
+    const channels: { channel_id: string; peer_a: string; peer_b: string; capacity: number }[] = [];
+    for (const agent of allAgents) {
+      const pid = agent.identity?.peer_id;
+      if (!pid) continue;
+      for (const ch of agent.channels) {
+        if (seen.has(ch.channel_id)) continue;
+        seen.add(ch.channel_id);
+        // Find the other agent by eth_address to get peer_id
+        const senderAgent = allAgents.find((a) => a.identity?.eth_address === ch.sender);
+        const receiverAgent = allAgents.find((a) => a.identity?.eth_address === ch.receiver);
+        const peerA = senderAgent?.identity?.peer_id;
+        const peerB = receiverAgent?.identity?.peer_id;
+        if (peerA && peerB && (ch.state === "ACTIVE" || ch.state === "OPEN")) {
+          channels.push({ channel_id: ch.channel_id, peer_a: peerA, peer_b: peerB, capacity: ch.total_deposit });
+        }
+      }
+    }
+    return channels;
+  }, [allAgents]);
+
+  // ── Graph interaction: click-to-connect, pay, route-pay ──
   const [interaction, setInteraction] = useState<{
-    mode: "channel" | "payment";
+    mode: "channel" | "payment" | "route-pay";
     sourceAgent?: AgentState;
     targetAgent?: AgentState;
     channelId?: string;
@@ -123,17 +147,48 @@ export default function NetworkPage() {
   const handleGraphInteraction = useCallback((gi: GraphInteraction) => {
     setInteractionResult(null);
     if (gi.type === "node-pair") {
-      // Two nodes clicked → open channel
       const source = allAgents.find((a) => a.identity?.peer_id === gi.sourcePeerId);
       const target = allAgents.find((a) => a.identity?.peer_id === gi.targetPeerId);
-      if (source && target) {
-        setInteraction({ mode: "channel", sourceAgent: source, targetAgent: target });
+      if (!source || !target) return;
+
+      // Check if source (first-clicked node) has an outbound channel to target
+      const chSourceToTarget = source.channels.find(
+        (c) => c.state === "ACTIVE" && c.peer_id === gi.targetPeerId && c.sender === source.identity?.eth_address
+      );
+
+      if (chSourceToTarget) {
+        // Source can pay target directly
+        setInteraction({ mode: "payment", sourceAgent: source, targetAgent: target, channelId: chSourceToTarget.channel_id });
+      } else {
+        // No outbound channel from source → offer route-pay (HTLC) or open channel
+        // Check if ANY channel exists between them (even reverse) to decide default mode
+        const hasAnyChannel = source.channels.some(
+          (c) => c.state === "ACTIVE" && c.peer_id === gi.targetPeerId
+        ) || target.channels.some(
+          (c) => c.state === "ACTIVE" && c.peer_id === gi.sourcePeerId
+        );
+        // If there's a reverse channel, suggest route-pay; otherwise open new channel
+        setInteraction({
+          mode: hasAnyChannel ? "route-pay" : "channel",
+          sourceAgent: source,
+          targetAgent: target,
+        });
       }
     } else if (gi.type === "channel-click") {
-      // Channel line clicked → send payment
-      const sender = allAgents.find((a) => a.channels.some((c) => c.channel_id === gi.channelId));
-      if (sender) {
-        setInteraction({ mode: "payment", sourceAgent: sender, channelId: gi.channelId });
+      // Find the channel, then identify which agent is the sender (can pay)
+      let senderAgent: typeof allAgents[0] | undefined;
+      let ch: Channel | undefined;
+      for (const a of allAgents) {
+        const found = a.channels.find((c) => c.channel_id === gi.channelId);
+        if (found && found.sender === a.identity?.eth_address) {
+          senderAgent = a;
+          ch = found;
+          break;
+        }
+      }
+      if (senderAgent && ch) {
+        const receiverAgent = allAgents.find((a) => a.identity?.eth_address === ch!.receiver);
+        setInteraction({ mode: "payment", sourceAgent: senderAgent, targetAgent: receiverAgent, channelId: ch.channel_id });
       }
     }
   }, [allAgents]);
@@ -144,8 +199,20 @@ export default function NetworkPage() {
     const receiver = interaction.targetAgent;
     if (!receiver.identity?.peer_id || !receiver.identity?.eth_address) return;
 
-    setInteractionLoading(true); setInteractionResult(null);
+    const sPid = sender.identity?.peer_id;
+    const rPid = receiver.identity.peer_id;
+
+    // Close popup, show connecting animation on both nodes
+    setInteraction(null);
+    const ln: LoadingNode[] = [];
+    if (sPid) ln.push({ peerId: sPid, color: "#7c6df0" });
+    if (rPid) ln.push({ peerId: rPid, color: "#7c6df0" });
+    setLoadingNodes(ln);
+    // Show animated route line between the two nodes during connection
+    if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#7c6df0", type: "channel" });
+
     try {
+      // Auto-connect peers before opening channel
       const addrs = receiver.identity?.addrs ?? [];
       const tcp = addrs.find((a) => a.includes("/tcp/") && !a.includes("/ws"));
       if (tcp) {
@@ -153,13 +220,70 @@ export default function NetworkPage() {
         const full = addr.includes("/p2p/") ? addr : `${addr}/p2p/${receiver.identity!.peer_id}`;
         try { await sender.api.connectPeer(full); } catch {}
       }
-      const res = await sender.api.openChannel(receiver.identity.peer_id, receiver.identity.eth_address, parseInt(interactionDeposit));
-      setInteractionResult({ ok: true, msg: `Channel ${res.channel.channel_id.slice(0, 10)}...` });
+      const [res] = await Promise.all([
+        sender.api.openChannel(receiver.identity.peer_id, receiver.identity.eth_address, parseInt(interactionDeposit)),
+        new Promise((r) => setTimeout(r, 1800)),
+      ]);
+      setLoadingNodes([]); setAnimatingRoute(null);
       pushEvent({ type: "channel_open", from: lbl(sender), message: `Opened channel to ${lbl(receiver)}`, meta: `Deposit: ${parseInt(interactionDeposit).toLocaleString()} wei` });
       sender.refresh(); receiver.refresh();
-      setTimeout(() => setInteraction(null), 1500);
-    } catch (e: unknown) { setInteractionResult({ ok: false, msg: e instanceof Error ? e.message : "Failed" }); }
-    finally { setInteractionLoading(false); }
+    } catch (e: unknown) {
+      setLoadingNodes([]); setAnimatingRoute(null);
+      pushEvent({ type: "status", from: lbl(sender), message: `Channel open failed: ${e instanceof Error ? e.message : "unknown"}` });
+    }
+  };
+
+  const handleRoutePayment = async () => {
+    if (!interaction?.sourceAgent || !interaction.targetAgent) return;
+    const sender = interaction.sourceAgent;
+    const receiver = interaction.targetAgent;
+    if (!receiver.identity?.peer_id) return;
+
+    const amountVal = parseInt(interactionAmount);
+    const sPid = sender.identity?.peer_id;
+    const rPid = receiver.identity.peer_id;
+    const knownChannels = collectKnownChannels();
+
+    // Close dialog and show animation
+    setInteraction(null);
+    const ln: LoadingNode[] = [];
+    if (sPid) ln.push({ peerId: sPid, color: "#f59e0b" });
+    if (rPid) ln.push({ peerId: rPid, color: "#34d399" });
+    setLoadingNodes(ln);
+
+    try {
+      // First find the route so we can animate it
+      let routeHops: string[] = [];
+      try {
+        const routeRes = await sender.api.findRoute(rPid, amountVal, knownChannels);
+        routeHops = [sPid!, ...routeRes.route.hops.map((h: { peer_id: string }) => h.peer_id)];
+        // Animate intermediate hops on the graph
+        setAnimatingRoute({ hops: routeHops, color: "#f59e0b", type: "payment" });
+        // Also light up intermediate nodes
+        const intermediateNodes: LoadingNode[] = routeHops.map((pid) => ({ peerId: pid, color: "#f59e0b" }));
+        setLoadingNodes(intermediateNodes);
+      } catch {
+        // If route finding fails, just animate endpoints
+        if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#f59e0b", type: "payment" });
+      }
+
+      const [res] = await Promise.all([
+        sender.api.routePayment(rPid, amountVal, knownChannels),
+        new Promise((r) => setTimeout(r, 2500)),
+      ]);
+      setLoadingNodes([]); setAnimatingRoute(null);
+      const hops = res.payment.route.hop_count;
+      pushEvent({
+        type: "payment",
+        from: lbl(sender),
+        message: `Routed ${amountVal.toLocaleString()} wei to ${lbl(receiver)} (${hops} hop${hops > 1 ? "s" : ""})`,
+        meta: `Hash: ${res.payment.payment_hash.slice(0, 12)}...`,
+      });
+      sender.refresh(); receiver.refresh();
+    } catch (e: unknown) {
+      setLoadingNodes([]); setAnimatingRoute(null);
+      pushEvent({ type: "status", from: lbl(sender), message: `Route payment failed: ${e instanceof Error ? e.message : "unknown"}` });
+    }
   };
 
   const handleSendPayment = async () => {
@@ -179,17 +303,18 @@ export default function NetworkPage() {
     if (sPid) ln.push({ peerId: sPid, color: "#fb923c" });
     if (rPid) ln.push({ peerId: rPid, color: "#34d399" });
     setLoadingNodes(ln);
+    if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#34d399", type: "payment" });
 
     try {
       const [res] = await Promise.all([
         sender.api.sendPayment(channelId, amountVal),
         new Promise((r) => setTimeout(r, 1800)),
       ]);
-      setLoadingNodes([]);
+      setLoadingNodes([]); setAnimatingRoute(null);
       pushEvent({ type: "payment", from: lbl(sender), message: `Sent ${amountVal.toLocaleString()} wei`, meta: `Nonce: ${res.voucher.nonce}` });
       sender.refresh();
     } catch (e: unknown) {
-      setLoadingNodes([]);
+      setLoadingNodes([]); setAnimatingRoute(null);
       pushEvent({ type: "status", from: lbl(sender), message: `Payment failed: ${e instanceof Error ? e.message : "unknown error"}` });
     }
   };
@@ -262,56 +387,29 @@ export default function NetworkPage() {
 
         {/* ── Center: graph ── */}
         <main className="flex-1 relative min-h-0">
-          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} onInteraction={handleGraphInteraction} />
+          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} animatingRoute={animatingRoute} onInteraction={handleGraphInteraction} />
 
-          {/* Interaction popup overlay — appears when user clicks nodes/channels */}
+          {/* Interaction popup overlay */}
           {interaction && (
             <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-              <div className="pointer-events-auto glass-card rounded-xl p-4 w-[280px] shadow-2xl border border-border-focus">
-                {interaction.mode === "channel" ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-semibold text-text-primary">Open Channel</h3>
-                      <button onClick={() => setInteraction(null)} className="text-text-muted hover:text-text-primary transition-colors">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px]">
-                      <span className="font-medium text-text-primary">{lbl(interaction.sourceAgent!)}</span>
-                      <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
-                      <span className="font-medium text-text-primary">{lbl(interaction.targetAgent!)}</span>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-medium text-text-secondary block mb-1">Deposit (wei)</label>
-                      <input value={interactionDeposit} onChange={(e) => setInteractionDeposit(e.target.value)} type="number" min="1"
-                        className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
-                    </div>
-                    {interactionResult && <ResultMsg result={interactionResult} />}
-                    <Button onClick={handleOpenChannel} disabled={interactionLoading} size="sm" className="w-full h-8 text-xs">
-                      {interactionLoading ? "Opening..." : "Open Channel"}
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-semibold text-text-primary">Send Payment</h3>
-                      <button onClick={() => setInteraction(null)} className="text-text-muted hover:text-text-primary transition-colors">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-                      </button>
-                    </div>
-                    <p className="text-[10px] font-mono text-text-secondary">{interaction.channelId?.slice(0, 16)}...</p>
-                    <div>
-                      <label className="text-[10px] font-medium text-text-secondary block mb-1">Amount (wei)</label>
-                      <input value={interactionAmount} onChange={(e) => setInteractionAmount(e.target.value)} type="number" min="1"
-                        className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
-                    </div>
-                    {interactionLoading && <div className="flex items-center gap-1.5 text-[11px] text-text-secondary"><span className="w-2.5 h-2.5 border border-text-muted border-t-success rounded-full animate-spin" />Transferring...</div>}
-                    {interactionResult && !interactionLoading && <ResultMsg result={interactionResult} />}
-                    <Button onClick={handleSendPayment} disabled={interactionLoading} variant="secondary" size="sm" className="w-full h-8 text-xs bg-success/80 hover:bg-success text-white">
-                      {interactionLoading ? "Sending..." : "Send Payment"}
-                    </Button>
-                  </div>
-                )}
+              <div className="pointer-events-auto glass-card rounded-xl p-4 w-[300px] shadow-2xl border border-border-focus">
+                <InteractionPopup
+                  interaction={interaction}
+                  interactionDeposit={interactionDeposit}
+                  setInteractionDeposit={setInteractionDeposit}
+                  interactionAmount={interactionAmount}
+                  setInteractionAmount={setInteractionAmount}
+                  interactionLoading={interactionLoading}
+                  interactionResult={interactionResult}
+                  onClose={() => setInteraction(null)}
+                  onOpenChannel={handleOpenChannel}
+                  onSendPayment={handleSendPayment}
+                  onRoutePayment={handleRoutePayment}
+                  onSwitchToRoutePay={() => setInteraction((prev) => prev ? { ...prev, mode: "route-pay" } : null)}
+                  onSwitchToChannel={() => setInteraction((prev) => prev ? { ...prev, mode: "channel" } : null)}
+                  lbl={lbl}
+                  allAgents={allAgents}
+                />
               </div>
             </div>
           )}
@@ -319,7 +417,7 @@ export default function NetworkPage() {
           {/* Hint bar */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10">
             <div className="glass-card rounded-lg px-3 py-1.5 text-[10px] text-text-secondary">
-              Click a node, then another to open a channel · Click a channel line to send payment
+              Click two nodes to connect or pay · Click a channel line to send direct payment · Multi-hop routes auto-discovered
             </div>
           </div>
 
@@ -364,10 +462,11 @@ export default function NetworkPage() {
               <div className="rounded-lg border border-border-subtle p-3 space-y-2">
                 <h4 className="text-[10px] font-semibold uppercase tracking-widest text-text-muted">Quick Connect</h4>
                 <p className="text-[10px] text-text-secondary leading-relaxed">
-                  Click any agent node on the graph, then click another to open a channel between them. Click a channel line to send a payment through it.
+                  Click two agent nodes to open a channel or send payment. Click a channel line for direct payment. Nodes without a direct channel can use multi-hop routing.
                 </p>
               </div>
 
+              <RoutePaymentForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} setLoadingNodes={setLoadingNodes} setAnimatingRoute={setAnimatingRoute} collectKnownChannels={collectKnownChannels} pushEvent={pushEvent} />
               <FallbackOpenChannelForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} pushEvent={pushEvent} />
               <FallbackSendPaymentForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} setLoadingNodes={setLoadingNodes} pushEvent={pushEvent} />
             </TabsContent>
@@ -551,6 +650,134 @@ function EventsList({ events }: { events: NetworkEvent[] }) {
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnimatingRoute, collectKnownChannels, pushEvent }: {
+  agents: AgentState[];
+  onlineAgents: AgentState[];
+  lbl: (a: AgentState) => string;
+  setLoadingNodes: React.Dispatch<React.SetStateAction<LoadingNode[]>>;
+  setAnimatingRoute: React.Dispatch<React.SetStateAction<AnimatingRoute | null>>;
+  collectKnownChannels: () => { channel_id: string; peer_a: string; peer_b: string; capacity: number }[];
+  pushEvent: (e: Omit<NetworkEvent, "id" | "timestamp">) => void;
+}) {
+  const [senderIdx, setSenderIdx] = useState("0");
+  const [receiverIdx, setReceiverIdx] = useState("");
+  const [amount, setAmount] = useState("100000");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  if (onlineAgents.length < 2) return null;
+
+  const sender = onlineAgents[parseInt(senderIdx)];
+
+  // Filter receivers to those the sender does NOT have a direct active channel to
+  const potentialReceivers = onlineAgents.filter((a, i) => {
+    if (String(i) === senderIdx) return false;
+    if (!a.identity?.peer_id) return false;
+    // Include all other agents — route-pay works whether there's a direct channel or not
+    return true;
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sender || !receiverIdx) return;
+    const receiver = onlineAgents[parseInt(receiverIdx)];
+    if (!receiver?.identity?.peer_id) { setResult({ ok: false, msg: "Select a destination" }); return; }
+
+    const sPid = sender.identity?.peer_id;
+    const rPid = receiver.identity.peer_id;
+    const amountVal = parseInt(amount);
+    const knownChannels = collectKnownChannels();
+
+    setLoading(true); setResult(null);
+    const ln: LoadingNode[] = [];
+    if (sPid) ln.push({ peerId: sPid, color: "#f59e0b" });
+    if (rPid) ln.push({ peerId: rPid, color: "#34d399" });
+    setLoadingNodes(ln);
+
+    try {
+      // Find route first for animation
+      try {
+        const routeRes = await sender.api.findRoute(rPid, amountVal, knownChannels);
+        const routeHops = [sPid!, ...routeRes.route.hops.map((h: { peer_id: string }) => h.peer_id)];
+        setAnimatingRoute({ hops: routeHops, color: "#f59e0b", type: "payment" });
+        setLoadingNodes(routeHops.map((pid) => ({ peerId: pid, color: "#f59e0b" })));
+      } catch {
+        if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#f59e0b", type: "payment" });
+      }
+
+      const [res] = await Promise.all([
+        sender.api.routePayment(rPid, amountVal, knownChannels),
+        new Promise((r) => setTimeout(r, 2500)),
+      ]);
+      setLoadingNodes([]); setAnimatingRoute(null);
+      const hops = res.payment.route.hop_count;
+      setResult({ ok: true, msg: `Routed via ${hops} hop${hops > 1 ? "s" : ""}` });
+      setAmount("");
+      pushEvent({
+        type: "payment",
+        from: lbl(sender),
+        message: `Routed ${amountVal.toLocaleString()} wei to ${lbl(receiver)} (${hops} hop${hops > 1 ? "s" : ""})`,
+        meta: `Hash: ${res.payment.payment_hash.slice(0, 16)}...`,
+      });
+      sender.refresh(); receiver.refresh();
+    } catch (err: unknown) {
+      setLoadingNodes([]); setAnimatingRoute(null);
+      setResult({ ok: false, msg: err instanceof Error ? err.message : "Failed" });
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="rounded-lg border border-warning/20 bg-warning/[0.03] p-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-warning">Route Payment</h4>
+        <span className="text-[8px] font-bold uppercase px-1 py-0.5 rounded bg-warning/15 text-warning">HTLC</span>
+      </div>
+      <p className="text-[9px] text-text-muted leading-relaxed">
+        Send payment via multi-hop routing through intermediate nodes. No direct channel needed.
+      </p>
+      <form onSubmit={handleSubmit} className="space-y-2">
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="text-[9px] font-medium text-text-muted block mb-1">From</label>
+            <Select value={senderIdx} onValueChange={(v) => { setSenderIdx(v); setReceiverIdx(""); }}>
+              <SelectTrigger className="h-7 text-[10px] bg-surface-overlay border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {onlineAgents.map((a, i) => <SelectItem key={i} value={String(i)} className="text-[10px]">{lbl(a)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <span className="text-warning pb-1 text-xs">→···→</span>
+          <div className="flex-1">
+            <label className="text-[9px] font-medium text-text-muted block mb-1">To</label>
+            <Select value={receiverIdx} onValueChange={setReceiverIdx}>
+              <SelectTrigger className="h-7 text-[10px] bg-surface-overlay border-border">
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent>
+                {potentialReceivers.map((a) => {
+                  const idx = onlineAgents.indexOf(a);
+                  return <SelectItem key={idx} value={String(idx)} className="text-[10px]">{lbl(a)}</SelectItem>;
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <label className="text-[9px] font-medium text-text-muted block mb-1">Amount (wei)</label>
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000" required min="1" type="number" disabled={loading}
+            className="w-full h-7 bg-surface-overlay border border-border rounded-md px-2 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus-ring disabled:opacity-50" />
+        </div>
+        {result && <ResultMsg result={result} />}
+        <Button type="submit" disabled={loading || !receiverIdx || senderIdx === receiverIdx} variant="secondary" size="sm" className="w-full h-7 text-[10px] bg-warning/80 hover:bg-warning text-black font-semibold">
+          {loading ? "Routing..." : "Route Payment (HTLC)"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 function FallbackOpenChannelForm({ agents, onlineAgents, lbl, pushEvent }: {
   agents: AgentState[];
   onlineAgents: AgentState[];
@@ -730,6 +957,134 @@ function FallbackSendPaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, p
         </Button>
       </form>
     </details>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Interaction popup (channel / payment / route-pay)
+// ═══════════════════════════════════════════════════════════
+
+function InteractionPopup({
+  interaction, interactionDeposit, setInteractionDeposit,
+  interactionAmount, setInteractionAmount,
+  interactionLoading, interactionResult, onClose,
+  onOpenChannel, onSendPayment, onRoutePayment, onSwitchToRoutePay, onSwitchToChannel,
+  lbl, allAgents,
+}: {
+  interaction: { mode: "channel" | "payment" | "route-pay"; sourceAgent?: AgentState; targetAgent?: AgentState; channelId?: string };
+  interactionDeposit: string; setInteractionDeposit: (v: string) => void;
+  interactionAmount: string; setInteractionAmount: (v: string) => void;
+  interactionLoading: boolean;
+  interactionResult: { ok: boolean; msg: string } | null;
+  onClose: () => void;
+  onOpenChannel: () => void;
+  onSendPayment: () => void;
+  onRoutePayment: () => void;
+  onSwitchToRoutePay: () => void;
+  onSwitchToChannel: () => void;
+  lbl: (a: AgentState) => string;
+  allAgents: AgentState[];
+}) {
+  const closeBtn = (
+    <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+    </button>
+  );
+
+  const arrow = (
+    <svg className="w-4 h-4 text-text-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+  );
+
+  if (interaction.mode === "channel") {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold text-text-primary">Open Channel</h3>
+          {closeBtn}
+        </div>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="font-medium text-text-primary">{lbl(interaction.sourceAgent!)}</span>
+          {arrow}
+          <span className="font-medium text-text-primary">{lbl(interaction.targetAgent!)}</span>
+        </div>
+        <div>
+          <label className="text-[10px] font-medium text-text-secondary block mb-1">Deposit (wei)</label>
+          <input value={interactionDeposit} onChange={(e) => setInteractionDeposit(e.target.value)} type="number" min="1"
+            className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
+        </div>
+        {interactionResult && <ResultMsg result={interactionResult} />}
+        <Button onClick={onOpenChannel} disabled={interactionLoading} size="sm" className="w-full h-8 text-xs">
+          {interactionLoading ? "Connecting & Opening..." : "Open Channel"}
+        </Button>
+      </div>
+    );
+  }
+
+  if (interaction.mode === "payment") {
+    const ch = interaction.sourceAgent?.channels.find((c) => c.channel_id === interaction.channelId);
+    const receiverAgent = ch ? allAgents.find((a) => a.identity?.eth_address === ch.receiver) : null;
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold text-text-primary">Send Payment</h3>
+          {closeBtn}
+        </div>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="font-medium text-text-primary">{lbl(interaction.sourceAgent!)}</span>
+          {arrow}
+          <span className="font-medium text-text-primary">{receiverAgent ? lbl(receiverAgent) : "Peer"}</span>
+          <span className="ml-auto text-[9px] font-mono text-text-muted">{ch ? `${formatWei(ch.remaining_balance)} left` : ""}</span>
+        </div>
+        <div>
+          <label className="text-[10px] font-medium text-text-secondary block mb-1">Amount (wei)</label>
+          <input value={interactionAmount} onChange={(e) => setInteractionAmount(e.target.value)} type="number" min="1"
+            className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
+        </div>
+        {interactionResult && <ResultMsg result={interactionResult} />}
+        <Button onClick={onSendPayment} disabled={interactionLoading} variant="secondary" size="sm" className="w-full h-8 text-xs bg-success/80 hover:bg-success text-white">
+          {interactionLoading ? "Sending..." : "Send Direct Payment"}
+        </Button>
+      </div>
+    );
+  }
+
+  // route-pay mode
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold text-text-primary">Route Payment</h3>
+          <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-warning/15 text-warning">Multi-hop</span>
+        </div>
+        {closeBtn}
+      </div>
+      <div className="flex items-center gap-2 text-[11px]">
+        <span className="font-medium text-text-primary">{lbl(interaction.sourceAgent!)}</span>
+        <svg className="w-4 h-4 text-warning shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+        </svg>
+        <span className="text-[9px] text-warning font-mono">···</span>
+        <svg className="w-4 h-4 text-warning shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+        </svg>
+        <span className="font-medium text-text-primary">{lbl(interaction.targetAgent!)}</span>
+      </div>
+      <p className="text-[9px] text-text-muted leading-relaxed">
+        No direct channel. Payment will be routed through intermediate nodes using HTLC forwarding.
+      </p>
+      <div>
+        <label className="text-[10px] font-medium text-text-secondary block mb-1">Amount (wei)</label>
+        <input value={interactionAmount} onChange={(e) => setInteractionAmount(e.target.value)} type="number" min="1"
+          className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
+      </div>
+      {interactionResult && <ResultMsg result={interactionResult} />}
+      <Button onClick={onRoutePayment} disabled={interactionLoading} variant="secondary" size="sm" className="w-full h-8 text-xs bg-warning/80 hover:bg-warning text-black font-semibold">
+        {interactionLoading ? "Routing..." : "Route Payment (HTLC)"}
+      </Button>
+      <button onClick={onSwitchToChannel} className="w-full text-center text-[9px] text-accent/70 hover:text-accent transition-colors pt-0.5">
+        or open a direct channel instead →
+      </button>
+    </div>
   );
 }
 

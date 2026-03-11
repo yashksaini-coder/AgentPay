@@ -58,6 +58,35 @@ export interface Balance {
   channel_count: number;
 }
 
+export interface RouteHop {
+  peer_id: string;
+  channel_id: string;
+  amount: number;
+  timeout: number;
+}
+
+export interface RouteInfo {
+  hops: RouteHop[];
+  total_amount: number;
+  total_timeout: number;
+  hop_count: number;
+}
+
+export interface RoutedPayment {
+  status: string;
+  payment_hash: string;
+  preimage: string;
+  route: RouteInfo;
+  amount: number;
+}
+
+export interface NetworkGraphData {
+  peers: string[];
+  channels: { channel_id: string; peer_a: string; peer_b: string; capacity: number }[];
+  peer_count: number;
+  channel_count: number;
+}
+
 // ---------- API calls (parameterized by base URL) ----------
 
 export function createApi(base: string = DEFAULT_API) {
@@ -85,6 +114,17 @@ export function createApi(base: string = DEFAULT_API) {
         method: "POST",
         body: JSON.stringify({ channel_id: channelId, amount }),
       }),
+    routePayment: (destination: string, amount: number, knownChannels?: { channel_id: string; peer_a: string; peer_b: string; capacity: number }[]) =>
+      fetchApi<{ payment: RoutedPayment }>(base, "/route-pay", {
+        method: "POST",
+        body: JSON.stringify({ destination, amount, known_channels: knownChannels }),
+      }),
+    findRoute: (destination: string, amount: number, knownChannels?: { channel_id: string; peer_a: string; peer_b: string; capacity: number }[]) =>
+      fetchApi<{ route: RouteInfo }>(base, "/route", {
+        method: "POST",
+        body: JSON.stringify({ destination, amount, known_channels: knownChannels }),
+      }),
+    getGraph: () => fetchApi<NetworkGraphData>(base, "/graph"),
   };
 }
 

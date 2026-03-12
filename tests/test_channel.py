@@ -30,7 +30,7 @@ class TestChannelStateMachine:
         channel.activate()
         assert channel.state == ChannelState.ACTIVE
 
-        channel.request_close()
+        channel.cooperative_close()
         assert channel.state == ChannelState.CLOSING
 
         channel.settle()
@@ -55,6 +55,8 @@ class TestChannelStateMachine:
         channel.accept()
         channel.activate()
         channel.dispute()
+        # Expire challenge period for test
+        channel.close_expiration = 0
         channel.settle()
         assert channel.state == ChannelState.SETTLED
 

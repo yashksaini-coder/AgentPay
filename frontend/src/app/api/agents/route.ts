@@ -25,6 +25,9 @@ const BASE_P2P_PORT = 9000;
 const BASE_WS_PORT = 9001;
 const BASE_API_PORT = 8080;
 
+// Hard cap on managed agents to prevent resource exhaustion
+const MAX_AGENTS = 20;
+
 // Project root (two levels up from frontend/src/app/api/agents/)
 const PROJECT_ROOT = path.resolve(process.cwd(), "..");
 
@@ -140,6 +143,14 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     // no body is fine — auto-assign ports
+  }
+
+  // Enforce hard cap
+  if (agents.size >= MAX_AGENTS) {
+    return NextResponse.json(
+      { error: `Maximum agent limit reached (${MAX_AGENTS}). Stop some agents first.` },
+      { status: 429 },
+    );
   }
 
   const ports = await nextAvailablePorts();

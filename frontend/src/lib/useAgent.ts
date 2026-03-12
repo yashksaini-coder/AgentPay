@@ -130,7 +130,7 @@ export function useAgent(port: number): AgentState {
 
     // Initial poll (WS may not be connected yet)
     poll();
-    const interval = setInterval(poll, 4000);
+    const interval = setInterval(poll, 8000);
     return () => {
       cancelled = true;
       clearInterval(interval);

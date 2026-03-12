@@ -1,4 +1,12 @@
-"""On-chain payment channel settlement logic."""
+"""On-chain payment channel settlement logic.
+
+Handles the full lifecycle of on-chain operations:
+- Open channel (deposit ETH or ERC-20 tokens)
+- Close channel (submit final voucher, start challenge period)
+- Challenge close (submit higher-nonce voucher during challenge)
+- Withdraw (settle after challenge period expires)
+- Query on-chain state
+"""
 
 from __future__ import annotations
 
@@ -19,7 +27,11 @@ logger = structlog.get_logger(__name__)
 
 
 class Settlement:
-    """Handles on-chain payment channel operations."""
+    """Handles on-chain payment channel operations.
+
+    Supports the full settlement lifecycle including challenge period
+    enforcement and dispute resolution.
+    """
 
     def __init__(self, w3: Web3, contract_address: str, wallet: Wallet) -> None:
         self.w3 = w3
@@ -71,7 +83,10 @@ class Settlement:
         channel_id: bytes,
         voucher: SignedVoucher,
     ) -> str:
-        """Close a payment channel on-chain with the final voucher.
+        """Initiate channel close on-chain with the final voucher.
+
+        This starts the challenge period. After the period expires,
+        call withdraw() to complete settlement.
 
         Returns tx_hash.
         """
@@ -93,6 +108,79 @@ class Settlement:
             tx_hash=tx_hash.hex(),
             channel_id=channel_id.hex()[:16],
             amount=voucher.amount,
+            nonce=voucher.nonce,
+        )
+        return tx_hash.hex()
+
+    async def challenge_close_onchain(
+        self,
+        channel_id: bytes,
+        voucher: SignedVoucher,
+    ) -> str:
+        """Challenge an in-progress close with a higher-nonce voucher.
+
+        Must be called during the challenge period. Submits a newer
+        voucher to override the closing state.
+
+        Returns tx_hash.
+        """
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx = self.contract.functions.challengeClose(
+            channel_id,
+            voucher.amount,
+            voucher.nonce,
+            voucher.timestamp,
+            voucher.signature,
+        ).build_transaction({
+            "from": self.wallet.address,
+            "nonce": tx_nonce,
+        })
+        signed_tx = self.wallet.sign_transaction(tx)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+        logger.info(
+            "channel_challenge_tx_sent",
+            tx_hash=tx_hash.hex(),
+            channel_id=channel_id.hex()[:16],
+            challenge_nonce=voucher.nonce,
+            challenge_amount=voucher.amount,
+        )
+        return tx_hash.hex()
+
+    async def withdraw_onchain(self, channel_id: bytes) -> str:
+        """Withdraw funds after challenge period expires.
+
+        Completes settlement: receiver gets closingAmount,
+        sender gets deposit - closingAmount.
+
+        Returns tx_hash.
+        """
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx = self.contract.functions.withdraw(
+            channel_id,
+        ).build_transaction({
+            "from": self.wallet.address,
+            "nonce": tx_nonce,
+        })
+        signed_tx = self.wallet.sign_transaction(tx)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+        logger.info(
+            "channel_withdraw_tx_sent",
+            tx_hash=tx_hash.hex(),
+            channel_id=channel_id.hex()[:16],
+        )
+
+        # Wait for receipt
+        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+        if receipt["status"] == 0:
+            raise RuntimeError(
+                f"Withdraw failed for channel {channel_id.hex()[:16]}. "
+                "Challenge period may still be active."
+            )
+
+        logger.info(
+            "channel_withdrawn",
+            tx_hash=tx_hash.hex(),
+            channel_id=channel_id.hex()[:16],
         )
         return tx_hash.hex()
 
@@ -108,3 +196,19 @@ class Settlement:
             "expiration": result[5],
             "closed": result[6],
         }
+
+    def is_challenge_active(self, channel_id: bytes) -> bool:
+        """Check if a channel is in its challenge period."""
+        info = self.get_channel_info(channel_id)
+        if info["closed"] or info["expiration"] == 0:
+            return False
+        current_block = self.w3.eth.get_block("latest")
+        return current_block["timestamp"] < info["expiration"]
+
+    def can_withdraw(self, channel_id: bytes) -> bool:
+        """Check if a channel is ready for withdrawal."""
+        info = self.get_channel_info(channel_id)
+        if info["closed"] or info["expiration"] == 0:
+            return False
+        current_block = self.w3.eth.get_block("latest")
+        return current_block["timestamp"] >= info["expiration"]

@@ -462,7 +462,7 @@ class TestMultiChannelScenarios:
         ch1.accept(); ch1.activate()
         ch2.accept(); ch2.activate()
 
-        ch1.request_close()
+        ch1.cooperative_close()
         ch1.settle()
 
         assert mgr.get_channel(CID).state == ChannelState.SETTLED
@@ -512,7 +512,7 @@ class TestFullLifecycleThroughManager:
         assert ch.total_paid == 500_000
         assert ch.remaining_balance == 500_000
 
-        ch.request_close()
+        ch.cooperative_close()
         assert ch.state == ChannelState.CLOSING
 
         ch.settle()

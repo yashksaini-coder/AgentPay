@@ -274,7 +274,7 @@ class TestInvalidStateTransitions:
     # From SETTLED ---
     def test_settled_is_terminal(self):
         ch = _active_ch()
-        ch.request_close()
+        ch.cooperative_close()
         ch.settle()
         for action in [ch.accept, ch.activate, ch.request_close, ch.settle, ch.dispute]:
             with pytest.raises(ChannelError):
@@ -336,7 +336,7 @@ class TestVoucherEdgeCases:
 
     def test_voucher_in_settled_state(self, eth_keypair, channel_id):
         ch = _active_ch(channel_id=channel_id)
-        ch.request_close()
+        ch.cooperative_close()
         ch.settle()
         v = SignedVoucher.create(channel_id, 1, 100, eth_keypair.key.hex())
         with pytest.raises(ChannelError, match="Cannot apply voucher in state SETTLED"):

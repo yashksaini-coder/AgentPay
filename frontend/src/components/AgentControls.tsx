@@ -1,23 +1,10 @@
 "use client";
 
 import { useAgentManager, type ManagedAgent } from "@/lib/useAgentManager";
-import { useAgent } from "@/lib/useAgent";
-
-const AGENT_A_PORT = Number(process.env.NEXT_PUBLIC_AGENT_A_PORT || 8080);
-const AGENT_B_PORT = Number(process.env.NEXT_PUBLIC_AGENT_B_PORT || 8081);
 
 export default function AgentControls() {
   const { agents, loading, error, startAgent, stopAgent, startDefaultAgents } =
     useAgentManager();
-
-  // Also check if agents are running externally (e.g. via dev.sh)
-  const agentA = useAgent(AGENT_A_PORT);
-  const agentB = useAgent(AGENT_B_PORT);
-
-  const externallyRunning = (agentA.online || agentB.online) && agents.length === 0;
-  const effectiveCount = externallyRunning
-    ? (agentA.online ? 1 : 0) + (agentB.online ? 1 : 0)
-    : agents.length;
 
   return (
     <div className="glass-card rounded-[var(--radius-card)] p-4 space-y-4">
@@ -28,11 +15,11 @@ export default function AgentControls() {
             Agent Processes
           </h3>
           <p className="text-[10px] text-text-muted mt-0.5">
-            {effectiveCount} running{externallyRunning ? " (external)" : ""}
+            {agents.length} running
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {!externallyRunning && agents.length === 0 && (
+          {agents.length === 0 && (
             <button
               onClick={startDefaultAgents}
               disabled={loading}
@@ -41,7 +28,7 @@ export default function AgentControls() {
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
               </svg>
-              Boot All
+              Boot Default
             </button>
           )}
           <button
@@ -64,25 +51,14 @@ export default function AgentControls() {
         </p>
       )}
 
-      {/* Show externally running agents */}
-      {externallyRunning && (
-        <div className="space-y-2">
-          {agentA.online && (
-            <ExternalAgentRow label="Agent A" port={AGENT_A_PORT} peerId={agentA.identity?.peer_id} />
-          )}
-          {agentB.online && (
-            <ExternalAgentRow label="Agent B" port={AGENT_B_PORT} peerId={agentB.identity?.peer_id} />
-          )}
-        </div>
-      )}
-
       {/* Managed agent list */}
       {agents.length > 0 && (
         <div className="space-y-2">
-          {agents.map((agent) => (
+          {agents.map((agent, i) => (
             <AgentRow
               key={agent.apiPort}
               agent={agent}
+              label={`Agent ${String.fromCharCode(65 + i)}`}
               onStop={() => stopAgent(agent.apiPort)}
               loading={loading}
             />
@@ -90,10 +66,10 @@ export default function AgentControls() {
         </div>
       )}
 
-      {!externallyRunning && agents.length === 0 && !loading && (
+      {agents.length === 0 && !loading && (
         <div className="py-4 text-center">
           <p className="text-xs text-text-muted">
-            No agents running. Click &quot;Boot All&quot; to start A + B, or &quot;Add Node&quot; for one.
+            No agents running. Click &quot;Boot Default&quot; to start two, or &quot;Add Node&quot; for one.
           </p>
         </div>
       )}
@@ -108,39 +84,14 @@ export default function AgentControls() {
   );
 }
 
-function ExternalAgentRow({
-  label,
-  port,
-  peerId,
-}: {
-  label: string;
-  port: number;
-  peerId?: string | null;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 bg-surface-overlay/40 rounded-[var(--radius-badge)] px-3 py-2.5 transition-smooth hover:bg-surface-hover">
-      <div className="flex items-center gap-3 min-w-0">
-        <span className="w-2 h-2 rounded-full shrink-0 bg-success animate-pulse-soft" />
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-text-secondary">{label}</p>
-          <p className="text-[10px] font-mono text-text-muted truncate">
-            API :{port} · External process
-          </p>
-        </div>
-      </div>
-      <span className="text-[9px] font-mono text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded">
-        external
-      </span>
-    </div>
-  );
-}
-
 function AgentRow({
   agent,
+  label,
   onStop,
   loading,
 }: {
   agent: ManagedAgent;
+  label: string;
   onStop: () => void;
   loading: boolean;
 }) {
@@ -162,7 +113,12 @@ function AgentRow({
         />
         <div className="min-w-0">
           <p className="text-xs font-medium text-text-secondary">
-            {agent.label}
+            {label}
+            {agent.external && (
+              <span className="ml-1.5 text-[9px] font-mono text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded">
+                external
+              </span>
+            )}
           </p>
           <p className="text-[10px] font-mono text-text-muted truncate">
             API :{agent.apiPort} &middot; P2P :{agent.port} &middot; WS :{agent.wsPort}
@@ -177,16 +133,18 @@ function AgentRow({
         <span className="text-[10px] font-mono text-text-muted">
           pid:{agent.pid}
         </span>
-        <button
-          onClick={onStop}
-          disabled={loading}
-          className="text-danger/60 hover:text-danger hover:bg-danger-subtle p-1 rounded transition-colors disabled:opacity-30"
-          title="Stop agent"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-          </svg>
-        </button>
+        {!agent.external && (
+          <button
+            onClick={onStop}
+            disabled={loading}
+            className="text-danger/60 hover:text-danger hover:bg-danger-subtle p-1 rounded transition-colors disabled:opacity-30"
+            title="Stop agent"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

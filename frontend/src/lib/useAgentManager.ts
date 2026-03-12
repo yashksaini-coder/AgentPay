@@ -41,7 +41,7 @@ export function useAgentManager() {
   // Poll for agent list
   useEffect(() => {
     fetchAgents();
-    pollRef.current = setInterval(fetchAgents, 5000);
+    pollRef.current = setInterval(fetchAgents, 10000);
     return () => clearInterval(pollRef.current);
   }, [fetchAgents]);
 

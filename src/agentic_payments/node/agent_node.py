@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import structlog
@@ -82,6 +83,7 @@ class AgentNode:
         self.listen_addrs: list[str] = []
         self._nursery: trio.Nursery | None = None
         self._streams: dict[str, NetStream] = {}
+        self._stream_locks: dict[str, trio.Lock] = {}
         # Preimages we generated (for payments we initiated)
         self._preimages: dict[bytes, bytes] = {}  # payment_hash -> preimage
 
@@ -166,8 +168,11 @@ class AgentNode:
             # Run pubsub as an async service
             nursery.start_soon(self._run_pubsub)
 
-            # --- Peer discovery ---
-            self.discovery = PeerDiscovery(self.host)
+            # --- Peer discovery (with bootstrap peers) ---
+            self.discovery = PeerDiscovery(
+                self.host,
+                bootstrap_addrs=self.config.node.bootstrap_peers,
+            )
             nursery.start_soon(self.discovery.run, nursery)
 
             # --- REST API ---
@@ -270,6 +275,14 @@ class AgentNode:
     # Stream management
     # ------------------------------------------------------------------
 
+    def _get_stream_lock(self, peer_id: str) -> trio.Lock:
+        """Get or create a per-peer lock for serializing stream I/O."""
+        lock = self._stream_locks.get(peer_id)
+        if lock is None:
+            lock = trio.Lock()
+            self._stream_locks[peer_id] = lock
+        return lock
+
     def _evict_stream(self, peer_id: str) -> None:
         """Remove a cached stream for a peer (e.g. on error or disconnect)."""
         self._streams.pop(peer_id, None)
@@ -319,12 +332,14 @@ class AgentNode:
             peer_id=peer_id,
         )
 
+        lock = self._get_stream_lock(peer_id)
         try:
-            stream = await self._open_stream(peer_id)
-            await write_message(stream, to_wire(MessageType.PAYMENT_OPEN, msg))
+            async with lock:
+                stream = await self._open_stream(peer_id)
+                await write_message(stream, to_wire(MessageType.PAYMENT_OPEN, msg))
 
-            # Wait for ACK
-            raw = await read_message(stream)
+                # Wait for ACK
+                raw = await read_message(stream)
             _, ack = from_wire(raw)
             if ack.status == "accepted":
                 channel.accept()
@@ -351,34 +366,37 @@ class AgentNode:
 
         Creates a signed voucher, sends it, waits for ACK.
         Evicts stale streams on error and retries once.
+        Uses per-peer lock to prevent concurrent stream corruption.
         """
         self._require_started()
         channel = self.channel_manager.get_channel(channel_id)
         peer_id = channel.peer_id
+        lock = self._get_stream_lock(peer_id)
 
         async def _attempt_pay() -> SignedVoucher:
-            stream = await self._get_or_open_stream(peer_id)
+            async with lock:
+                stream = await self._get_or_open_stream(peer_id)
 
-            async def send_fn(msg):
-                await write_message(stream, to_wire(MessageType.PAYMENT_UPDATE, msg))
+                async def send_fn(msg):
+                    await write_message(stream, to_wire(MessageType.PAYMENT_UPDATE, msg))
 
-            voucher = await self.channel_manager.send_payment(
-                channel_id=channel_id,
-                amount=amount,
-                private_key=self.wallet.private_key,
-                send_fn=send_fn,
-            )
+                voucher = await self.channel_manager.send_payment(
+                    channel_id=channel_id,
+                    amount=amount,
+                    private_key=self.wallet.private_key,
+                    send_fn=send_fn,
+                )
 
-            raw = await read_message(stream)
-            msg_type, ack = from_wire(raw)
-            if msg_type == MessageType.HTLC_CANCEL:
-                raise RuntimeError(f"Payment rejected (HTLC cancel): {ack.reason}")
-            if msg_type != MessageType.PAYMENT_ACK:
-                raise RuntimeError(f"Unexpected response type: {msg_type}")
-            if ack.status != "accepted":
-                raise RuntimeError(f"Payment rejected: {ack.reason}")
+                raw = await read_message(stream)
+                msg_type, ack = from_wire(raw)
+                if msg_type == MessageType.HTLC_CANCEL:
+                    raise RuntimeError(f"Payment rejected (HTLC cancel): {ack.reason}")
+                if msg_type != MessageType.PAYMENT_ACK:
+                    raise RuntimeError(f"Unexpected response type: {msg_type}")
+                if ack.status != "accepted":
+                    raise RuntimeError(f"Payment rejected: {ack.reason}")
 
-            return voucher
+                return voucher
 
         try:
             return await _attempt_pay()
@@ -405,14 +423,15 @@ class AgentNode:
             cooperative=True,
         )
 
-        stream = await self._get_or_open_stream(peer_id)
-
-        await write_message(stream, to_wire(MessageType.PAYMENT_CLOSE, msg))
-        raw = await read_message(stream)
+        lock = self._get_stream_lock(peer_id)
+        async with lock:
+            stream = await self._get_or_open_stream(peer_id)
+            await write_message(stream, to_wire(MessageType.PAYMENT_CLOSE, msg))
+            raw = await read_message(stream)
         _, ack = from_wire(raw)
 
         if ack.status == "accepted":
-            channel.request_close()
+            channel.cooperative_close()
             channel.settle()
             # Clean up stream for this peer
             self._evict_stream(peer_id)
@@ -559,54 +578,66 @@ class AgentNode:
         )
         self.htlc_manager.add_htlc(outgoing_htlc)
 
-        # Send HTLC to first hop
+        # Send HTLC to first hop (lock serializes all stream I/O per peer)
         peer_id = first_hop.peer_id
-        stream = await self._get_or_open_stream(peer_id)
-        await write_message(stream, to_wire(MessageType.HTLC_PROPOSE, htlc_msg))
+        lock = self._get_stream_lock(peer_id)
 
-        # Wait for fulfill or cancel response
-        raw = await read_message(stream)
-        msg_type, resp = from_wire(raw)
+        async with lock:
+            stream = await self._get_or_open_stream(peer_id)
+            await write_message(stream, to_wire(MessageType.HTLC_PROPOSE, htlc_msg))
 
-        if msg_type == MessageType.HTLC_FULFILL:
-            if verify_preimage(resp.preimage, payment_hash):
-                self.htlc_manager.fulfill(outgoing_htlc.htlc_id, resp.preimage)
+            # Wait for fulfill or cancel response
+            raw = await read_message(stream)
+            msg_type, resp = from_wire(raw)
+
+            if msg_type == MessageType.HTLC_FULFILL:
+                if verify_preimage(resp.preimage, payment_hash):
+                    self.htlc_manager.fulfill(outgoing_htlc.htlc_id, resp.preimage)
+                    channel.unlock_htlc(amount)
+                    # Actually transfer the funds via a voucher
+                    async def send_fn(msg):
+                        await write_message(stream, to_wire(MessageType.PAYMENT_UPDATE, msg))
+                    await self.channel_manager.send_payment(
+                        channel_id=channel.channel_id,
+                        amount=amount,
+                        private_key=self.wallet.private_key,
+                        send_fn=send_fn,
+                    )
+                    # Read the PAYMENT_ACK response (prevents stream buffer offset)
+                    raw = await read_message(stream)
+                    ack_type, ack = from_wire(raw)
+                    if ack_type != MessageType.PAYMENT_ACK:
+                        raise RuntimeError(f"Unexpected voucher ACK type: {ack_type}")
+                    if ack.status != "accepted":
+                        raise RuntimeError(f"Voucher rejected by peer: {ack.reason}")
+                else:
+                    channel.unlock_htlc(amount)
+                    self.htlc_manager.cancel(outgoing_htlc.htlc_id, "Invalid preimage")
+                    raise RuntimeError("Received invalid preimage")
+
+            elif msg_type == MessageType.HTLC_CANCEL:
                 channel.unlock_htlc(amount)
-                # Actually transfer the funds via a voucher
-                async def send_fn(msg):
-                    await write_message(stream, to_wire(MessageType.PAYMENT_UPDATE, msg))
-                await self.channel_manager.send_payment(
-                    channel_id=channel.channel_id,
-                    amount=amount,
-                    private_key=self.wallet.private_key,
-                    send_fn=send_fn,
-                )
-                logger.info(
-                    "routed_payment_complete",
-                    destination=destination,
-                    amount=amount,
-                    hops=route.hop_count,
-                )
-                return {
-                    "status": "fulfilled",
-                    "payment_hash": payment_hash.hex(),
-                    "preimage": resp.preimage.hex(),
-                    "route": route.to_dict(),
-                    "amount": amount,
-                }
+                self.htlc_manager.cancel(outgoing_htlc.htlc_id, resp.reason)
+                raise RuntimeError(f"HTLC cancelled: {resp.reason}")
+
             else:
                 channel.unlock_htlc(amount)
-                self.htlc_manager.cancel(outgoing_htlc.htlc_id, "Invalid preimage")
-                raise RuntimeError("Received invalid preimage")
+                raise RuntimeError(f"Unexpected response type: {msg_type}")
 
-        elif msg_type == MessageType.HTLC_CANCEL:
-            channel.unlock_htlc(amount)
-            self.htlc_manager.cancel(outgoing_htlc.htlc_id, resp.reason)
-            raise RuntimeError(f"HTLC cancelled: {resp.reason}")
-
-        else:
-            channel.unlock_htlc(amount)
-            raise RuntimeError(f"Unexpected response type: {msg_type}")
+        if msg_type == MessageType.HTLC_FULFILL and verify_preimage(resp.preimage, payment_hash):
+            logger.info(
+                "routed_payment_complete",
+                destination=destination,
+                amount=amount,
+                hops=route.hop_count,
+            )
+            return {
+                "status": "fulfilled",
+                "payment_hash": payment_hash.hex(),
+                "preimage": resp.preimage.hex(),
+                "route": route.to_dict(),
+                "amount": amount,
+            }
 
     def _find_channel_to_peer(self, peer_id: str) -> PaymentChannel | None:
         """Find an active channel to a specific peer where we are the sender."""
@@ -626,6 +657,17 @@ class AgentNode:
     ) -> tuple[MessageType, Any]:
         """Handle incoming HTLC proposal — either forward or settle as final hop."""
         from agentic_payments.protocol.messages import HtlcCancel, HtlcFulfill, HtlcPropose
+        from agentic_payments.routing.pathfinder import TIMEOUT_DELTA
+
+        # Validate timeout: must be in the future with enough margin
+        now = int(time.time())
+        if msg.timeout <= now:
+            logger.warning("htlc_expired_on_arrival", htlc_id=msg.htlc_id.hex()[:16], timeout=msg.timeout)
+            return MessageType.HTLC_CANCEL, HtlcCancel(
+                channel_id=msg.channel_id,
+                htlc_id=msg.htlc_id,
+                reason="HTLC timeout already expired",
+            )
 
         # Create the incoming HTLC record
         incoming = PendingHtlc(
@@ -681,6 +723,22 @@ class AgentNode:
         next_hop = remaining_hops[0]
         next_peer_id = next_hop["peer_id"]
 
+        # Validate CLTV delta: incoming timeout must leave enough room for outgoing
+        outgoing_timeout = next_hop.get("timeout", msg.timeout - TIMEOUT_DELTA)
+        if msg.timeout - outgoing_timeout < TIMEOUT_DELTA:
+            self.htlc_manager.cancel(msg.htlc_id, "Insufficient CLTV delta")
+            logger.warning(
+                "htlc_insufficient_cltv",
+                incoming_timeout=msg.timeout,
+                outgoing_timeout=outgoing_timeout,
+                delta=TIMEOUT_DELTA,
+            )
+            return MessageType.HTLC_CANCEL, HtlcCancel(
+                channel_id=msg.channel_id,
+                htlc_id=msg.htlc_id,
+                reason=f"Insufficient timeout delta (need {TIMEOUT_DELTA}s, got {msg.timeout - outgoing_timeout}s)",
+            )
+
         # Find channel to next peer
         next_channel = self._find_channel_to_peer(next_peer_id)
         if next_channel is None:
@@ -706,6 +764,9 @@ class AgentNode:
         downstream_onion = b""
         if len(remaining_hops) > 1:
             downstream_onion = msgpack.packb(remaining_hops[1:], use_bin_type=True)
+        elif "preimage" in next_hop:
+            # Last forwarding hop — pass preimage to the final destination
+            downstream_onion = msgpack.packb([{"preimage": next_hop["preimage"]}], use_bin_type=True)
 
         # Create outgoing HTLC
         outgoing_msg = HtlcPropose(
@@ -727,13 +788,15 @@ class AgentNode:
         )
         self.htlc_manager.add_htlc(outgoing_htlc)
 
-        # Forward to next hop
+        # Forward to next hop (lock serializes stream I/O per peer)
+        lock = self._get_stream_lock(next_peer_id)
         try:
-            stream = await self._get_or_open_stream(next_peer_id)
-            await write_message(stream, to_wire(MessageType.HTLC_PROPOSE, outgoing_msg))
+            async with lock:
+                stream = await self._get_or_open_stream(next_peer_id)
+                await write_message(stream, to_wire(MessageType.HTLC_PROPOSE, outgoing_msg))
 
-            # Wait for response from downstream
-            raw = await read_message(stream)
+                # Wait for response from downstream
+                raw = await read_message(stream)
             resp_type, resp = from_wire(raw)
 
             if resp_type == MessageType.HTLC_FULFILL:

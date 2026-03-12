@@ -74,7 +74,7 @@ class TestTwoPartyFlow:
         assert mgr_b.get_channel(cid).state == ChannelState.CLOSING
 
         # Settle
-        mgr_a.get_channel(cid).request_close()
+        mgr_a.get_channel(cid).cooperative_close()
         mgr_a.get_channel(cid).settle()
         mgr_b.get_channel(cid).settle()
         assert mgr_a.get_channel(cid).state == ChannelState.SETTLED
@@ -197,6 +197,7 @@ class TestDisputeScenarios:
         ch.activate()
         ch.dispute()
         assert ch.state == ChannelState.DISPUTED
+        ch.close_expiration = 0  # Expire challenge for test
         ch.settle()
         assert ch.state == ChannelState.SETTLED
 
@@ -213,6 +214,8 @@ class TestDisputeScenarios:
         ch.request_close()
         ch.dispute()
         assert ch.state == ChannelState.DISPUTED
+        # For test: set expiration to past so settle works
+        ch.close_expiration = 0
         ch.settle()
         assert ch.state == ChannelState.SETTLED
 

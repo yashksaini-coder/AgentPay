@@ -7,8 +7,9 @@ from typing import Any
 from web3 import Web3
 from web3.contract import Contract
 
-# Minimal PaymentChannel ABI — matches contracts/src/PaymentChannel.sol
+# PaymentChannel ABI — matches contracts/src/PaymentChannel.sol
 PAYMENT_CHANNEL_ABI = [
+    # openChannel (ETH)
     {
         "inputs": [
             {"name": "receiver", "type": "address"},
@@ -19,6 +20,20 @@ PAYMENT_CHANNEL_ABI = [
         "stateMutability": "payable",
         "type": "function",
     },
+    # openTokenChannel (ERC-20)
+    {
+        "inputs": [
+            {"name": "receiver", "type": "address"},
+            {"name": "duration", "type": "uint256"},
+            {"name": "token", "type": "address"},
+            {"name": "amount", "type": "uint256"},
+        ],
+        "name": "openTokenChannel",
+        "outputs": [{"name": "channelId", "type": "bytes32"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    # closeChannel
     {
         "inputs": [
             {"name": "channelId", "type": "bytes32"},
@@ -32,6 +47,7 @@ PAYMENT_CHANNEL_ABI = [
         "stateMutability": "nonpayable",
         "type": "function",
     },
+    # challengeClose
     {
         "inputs": [
             {"name": "channelId", "type": "bytes32"},
@@ -45,6 +61,7 @@ PAYMENT_CHANNEL_ABI = [
         "stateMutability": "nonpayable",
         "type": "function",
     },
+    # withdraw
     {
         "inputs": [{"name": "channelId", "type": "bytes32"}],
         "name": "withdraw",
@@ -52,6 +69,7 @@ PAYMENT_CHANNEL_ABI = [
         "stateMutability": "nonpayable",
         "type": "function",
     },
+    # getChannel
     {
         "inputs": [{"name": "channelId", "type": "bytes32"}],
         "name": "getChannel",
@@ -67,6 +85,15 @@ PAYMENT_CHANNEL_ABI = [
         "stateMutability": "view",
         "type": "function",
     },
+    # getChannelToken
+    {
+        "inputs": [{"name": "channelId", "type": "bytes32"}],
+        "name": "getChannelToken",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    # Events
     {
         "anonymous": False,
         "inputs": [
@@ -76,6 +103,38 @@ PAYMENT_CHANNEL_ABI = [
             {"indexed": False, "name": "deposit", "type": "uint256"},
         ],
         "name": "ChannelOpened",
+        "type": "event",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "name": "channelId", "type": "bytes32"},
+            {"indexed": True, "name": "sender", "type": "address"},
+            {"indexed": True, "name": "receiver", "type": "address"},
+            {"indexed": False, "name": "deposit", "type": "uint256"},
+            {"indexed": False, "name": "token", "type": "address"},
+        ],
+        "name": "TokenChannelOpened",
+        "type": "event",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "name": "channelId", "type": "bytes32"},
+            {"indexed": False, "name": "amount", "type": "uint256"},
+            {"indexed": False, "name": "expiration", "type": "uint256"},
+        ],
+        "name": "ChannelCloseInitiated",
+        "type": "event",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "name": "channelId", "type": "bytes32"},
+            {"indexed": False, "name": "amount", "type": "uint256"},
+            {"indexed": False, "name": "nonce", "type": "uint256"},
+        ],
+        "name": "ChannelChallenged",
         "type": "event",
     },
     {
@@ -107,7 +166,7 @@ def build_open_channel_tx(
     nonce: int,
     gas_price: int | None = None,
 ) -> dict[str, Any]:
-    """Build an openChannel transaction."""
+    """Build an openChannel transaction (native ETH)."""
     tx = contract.functions.openChannel(
         Web3.to_checksum_address(receiver),
         duration,
@@ -117,6 +176,30 @@ def build_open_channel_tx(
             "value": deposit_wei,
             "nonce": nonce,
             **({"gasPrice": gas_price} if gas_price else {}),
+        }
+    )
+    return tx
+
+
+def build_open_token_channel_tx(
+    contract: Contract,
+    receiver: str,
+    duration: int,
+    token_address: str,
+    amount: int,
+    sender: str,
+    nonce: int,
+) -> dict[str, Any]:
+    """Build an openTokenChannel transaction (ERC-20 token)."""
+    tx = contract.functions.openTokenChannel(
+        Web3.to_checksum_address(receiver),
+        duration,
+        Web3.to_checksum_address(token_address),
+        amount,
+    ).build_transaction(
+        {
+            "from": sender,
+            "nonce": nonce,
         }
     )
     return tx

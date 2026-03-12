@@ -41,6 +41,17 @@ export function useNetworkEvents(agents: AgentState[], labelFn: (i: number) => s
   );
 
   const diffState = useCallback(() => {
+    // Pre-build address → index map for O(1) lookups
+    const addrToIdx = new Map<string, number>();
+    agents.forEach((a, i) => {
+      if (a.identity?.eth_address) addrToIdx.set(a.identity.eth_address, i);
+    });
+
+    const resolveLabel = (addr: string) => {
+      const idx = addrToIdx.get(addr);
+      return idx !== undefined ? labelFn(idx) : shortenTarget(addr);
+    };
+
     agents.forEach((agent, i) => {
       if (!agent.online) return;
       const pid = agent.identity?.peer_id || `port-${i}`;
@@ -58,44 +69,40 @@ export function useNetworkEvents(agents: AgentState[], labelFn: (i: number) => s
         });
       }
 
-      // New channels
+      // Pre-build prev channel maps for O(1) lookups
       const prevIds = new Set(prev.channels.map((c) => c.channel_id));
+      const prevChMap = new Map(prev.channels.map((c) => [c.channel_id, c]));
+
+      // New channels
       for (const ch of agent.channels) {
         if (!prevIds.has(ch.channel_id)) {
-          // Find receiver label
-          const receiver = agents.find((a) => a.identity?.eth_address === ch.receiver);
-          const toLabel = receiver ? labelFn(agents.indexOf(receiver)) : shortenTarget(ch.receiver);
           pushEvent({
             type: "channel_open",
             from: label,
-            to: toLabel,
+            to: resolveLabel(ch.receiver),
             message: `Channel opened`,
             meta: `${ch.channel_id.slice(0, 12)}... deposit: ${ch.total_deposit}`,
           });
         }
       }
 
-      // Payment changes (nonce increase)
+      // Payment changes (nonce increase) + state changes
       for (const ch of agent.channels) {
-        const prevCh = prev.channels.find((c) => c.channel_id === ch.channel_id);
-        if (prevCh && ch.nonce > prevCh.nonce) {
+        const prevCh = prevChMap.get(ch.channel_id);
+        if (!prevCh) continue;
+
+        if (ch.nonce > prevCh.nonce) {
           const payments = ch.nonce - prevCh.nonce;
-          const receiver = agents.find((a) => a.identity?.eth_address === ch.receiver);
-          const toLabel = receiver ? labelFn(agents.indexOf(receiver)) : undefined;
           pushEvent({
             type: "payment",
             from: label,
-            to: toLabel,
+            to: resolveLabel(ch.receiver),
             message: `${payments} payment${payments > 1 ? "s" : ""} sent`,
             meta: `nonce: ${ch.nonce}, paid: ${ch.total_paid}`,
           });
         }
-      }
 
-      // Channel state changes
-      for (const ch of agent.channels) {
-        const prevCh = prev.channels.find((c) => c.channel_id === ch.channel_id);
-        if (prevCh && prevCh.state !== ch.state) {
+        if (prevCh.state !== ch.state) {
           pushEvent({
             type: ch.state === "CLOSING" || ch.state === "SETTLED" ? "channel_close" : "status",
             from: label,

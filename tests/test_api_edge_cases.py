@@ -81,7 +81,7 @@ class MockNode:
 
     async def close_channel(self, channel_id):
         channel = self.channel_manager.get_channel(channel_id)
-        channel.request_close()
+        channel.cooperative_close()
         channel.settle()
 
     async def connect(self, multiaddr):
@@ -358,7 +358,7 @@ class TestPayEndpointEdgeCases:
         # Second payment would exceed deposit (900k + 200k > 1M)
         resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": 200_000}),
                                  headers=_headers())
-        assert resp.status_code == 500  # ChannelError bubbles as 500
+        assert resp.status_code == 400  # ChannelError returns 400
 
     async def test_pay_exact_deposit_amount(self, client):
         """Paying exactly the deposit amount should succeed."""
@@ -420,7 +420,7 @@ class TestCloseChannelEdgeCases:
         await client.post(f"/channels/{cid}/close")
         # Try close again
         resp = await client.post(f"/channels/{cid}/close")
-        assert resp.status_code == 500  # ChannelError: already SETTLED
+        assert resp.status_code == 400  # ChannelError: already SETTLED
 
 
 # ═══════════════════════════════════════════════════════════════════════════

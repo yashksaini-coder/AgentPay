@@ -366,5 +366,318 @@ def balance(
         raise typer.Exit(1)
 
 
+@app.command()
+def simulate(
+    agents: int = typer.Option(3, "--agents", "-n", help="Number of agents (2-20)"),
+    topology: str = typer.Option("ring", help="Topology: ring, mesh, or random"),
+    deposit: int = typer.Option(5_000_000, help="Deposit per channel in wei"),
+    rounds: int = typer.Option(20, "--rounds", "-r", help="Number of payment rounds"),
+    min_pay: int = typer.Option(10_000, help="Minimum payment amount in wei"),
+    max_pay: int = typer.Option(500_000, help="Maximum payment amount in wei"),
+    concurrency: int = typer.Option(5, help="Max concurrent payments per batch"),
+    base_port: int = typer.Option(8080, help="Base API port (agents use base+0, base+1, ...)"),
+    spawn: bool = typer.Option(True, help="Auto-spawn agent processes (requires dev.sh or manual start if false)"),
+) -> None:
+    """Run a payment simulation across multiple agents (like the UI simulation panel)."""
+    import json
+    import os
+    import random
+    import subprocess
+    import urllib.error
+    import urllib.request
+
+    _setup_logging(level="INFO")
+
+    if agents < 2 or agents > 20:
+        typer.echo("Error: --agents must be between 2 and 20", err=True)
+        raise typer.Exit(1)
+    if topology not in ("ring", "mesh", "random"):
+        typer.echo("Error: --topology must be ring, mesh, or random", err=True)
+        raise typer.Exit(1)
+    if min_pay > max_pay:
+        typer.echo("Error: --min-pay must be <= --max-pay", err=True)
+        raise typer.Exit(1)
+
+    # ── Helpers ──────────────────────────────────────────────────
+    def api(port: int, path: str, data: dict | None = None) -> dict:
+        """Make an API call to an agent."""
+        url = f"http://127.0.0.1:{port}{path}"
+        if data is not None:
+            payload = json.dumps(data).encode()
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+        else:
+            req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+
+    def probe(port: int) -> bool:
+        """Check if an agent is alive on a port."""
+        try:
+            r = api(port, "/health")
+            return r.get("status") == "ok"
+        except Exception:
+            return False
+
+    import time
+
+    project_root = Path(__file__).resolve().parent.parent.parent
+    spawned_procs: list[subprocess.Popen] = []
+
+    def cleanup_procs() -> None:
+        for proc in spawned_procs:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+        for proc in spawned_procs:
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+    # ── Phase 1: Ensure agents are running ──────────────────────
+    typer.echo(f"\n{'━' * 50}")
+    typer.echo("  AgentPay Simulation")
+    typer.echo(f"  {agents} agents • {topology} topology • {rounds} rounds")
+    typer.echo(f"{'━' * 50}\n")
+
+    ports: list[int] = [base_port + i for i in range(agents)]
+
+    if spawn:
+        typer.echo("[spawn] Starting agent processes...")
+        for i, api_port in enumerate(ports):
+            if probe(api_port):
+                typer.echo(f"  Agent {i} (:{api_port}) already running")
+                continue
+
+            p2p_port = 9000 + i * 100
+            ws_port = 9001 + i * 100
+            identity_idx = api_port - 8080
+            identity_file = (
+                "identity.key" if identity_idx == 0
+                else f"identity{identity_idx + 1}.key"
+            )
+            identity_path = os.path.expanduser(f"~/.agentic-payments/{identity_file}")
+
+            proc = subprocess.Popen(
+                [
+                    "uv", "run", "agentpay", "start",
+                    "--port", str(p2p_port),
+                    "--ws-port", str(ws_port),
+                    "--api-port", str(api_port),
+                    "--identity-path", identity_path,
+                    "--log-level", "WARNING",
+                ],
+                cwd=str(project_root),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            spawned_procs.append(proc)
+            typer.echo(f"  Agent {i} (:{api_port}) spawned (PID {proc.pid})")
+            time.sleep(0.8)
+
+        # Wait for all agents to come online
+        typer.echo("[spawn] Waiting for agents to come online...")
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            online = sum(1 for p in ports if probe(p))
+            if online >= agents:
+                break
+            time.sleep(1)
+
+        online = sum(1 for p in ports if probe(p))
+        if online < 2:
+            typer.echo(f"Error: Only {online} agents online, need at least 2", err=True)
+            cleanup_procs()
+            raise typer.Exit(1)
+        typer.echo(f"  {online}/{agents} agents online\n")
+    else:
+        online = sum(1 for p in ports if probe(p))
+        if online < 2:
+            typer.echo(f"Error: Only {online} agents found on ports {ports}. Start agents first.", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"[check] {online}/{agents} agents online\n")
+
+    # Get identity info for all online agents
+    agent_info: list[dict] = []
+    for p in ports:
+        if probe(p):
+            try:
+                ident = api(p, "/identity")
+                ident["_port"] = p
+                agent_info.append(ident)
+            except Exception:
+                pass
+
+    if len(agent_info) < 2:
+        typer.echo("Error: Could not get identity for enough agents", err=True)
+        cleanup_procs()
+        raise typer.Exit(1)
+
+    # ── Phase 2: Build topology and open channels ───────────────
+    typer.echo(f"[connect] Building {topology} topology...")
+
+    # Build index pairs
+    n = len(agent_info)
+    pairs: list[tuple[int, int]] = []
+
+    if topology == "ring":
+        for i in range(n):
+            pairs.append((i, (i + 1) % n))
+    elif topology == "mesh":
+        for i in range(n):
+            for j in range(i + 1, n):
+                pairs.append((i, j))
+    else:  # random
+        seen: set[str] = set()
+        for i in range(n):
+            k = random.randint(1, min(2, n - 1))
+            for _ in range(k):
+                j = random.randint(0, n - 1)
+                while j == i:
+                    j = random.randint(0, n - 1)
+                key = f"{min(i, j)}-{max(i, j)}"
+                if key not in seen:
+                    seen.add(key)
+                    pairs.append((i, j))
+
+    typer.echo(f"  {len(pairs)} channel pairs to open")
+
+    # Connect peers and open channels
+    opened = 0
+    for si, ri in pairs:
+        sender = agent_info[si]
+        receiver = agent_info[ri]
+        s_port = sender["_port"]
+
+        # Resolve receiver multiaddr
+        addrs = receiver.get("addrs", [])
+        tcp_addr = next((a for a in addrs if "/tcp/" in a and "/ws" not in a), None)
+        if not tcp_addr:
+            continue
+        tcp_addr = tcp_addr.replace("/ip4/0.0.0.0/", "/ip4/127.0.0.1/")
+        if "/p2p/" not in tcp_addr:
+            tcp_addr = f"{tcp_addr}/p2p/{receiver['peer_id']}"
+
+        # Connect
+        try:
+            api(s_port, "/connect", {"multiaddr": tcp_addr})
+        except Exception:
+            pass
+
+        # Open channel
+        try:
+            api(s_port, "/channels", {
+                "peer_id": receiver["peer_id"],
+                "receiver": receiver["eth_address"],
+                "deposit": deposit,
+            })
+            opened += 1
+            typer.echo(f"  [{opened}/{len(pairs)}] Agent {si} → Agent {ri} ({deposit:,} wei)")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode() if e.fp else ""
+            typer.echo(f"  [skip] Agent {si} → Agent {ri}: {body[:80]}")
+        except Exception as e:
+            typer.echo(f"  [skip] Agent {si} → Agent {ri}: {e}")
+
+    typer.echo(f"  {opened} channels opened\n")
+
+    if opened == 0:
+        typer.echo("Error: No channels opened. Cannot simulate.", err=True)
+        cleanup_procs()
+        raise typer.Exit(1)
+
+    # Brief pause for channels to settle
+    time.sleep(1)
+
+    # ── Phase 3: Run payments ───────────────────────────────────
+    typer.echo(f"[simulate] Running {rounds} payment rounds...")
+
+    ok_count = 0
+    fail_count = 0
+
+    # Refresh channel data
+    def get_channels(port: int) -> list[dict]:
+        try:
+            data = api(port, "/channels")
+            return data.get("channels", [])
+        except Exception:
+            return []
+
+    for r in range(rounds):
+        amount = random.randint(min_pay, max_pay)
+
+        # Pick a random sender with an active outbound channel that has balance
+        random.shuffle(agent_info)
+        sent = False
+
+        for sender in agent_info:
+            s_port = sender["_port"]
+            channels = get_channels(s_port)
+            eligible = [
+                c for c in channels
+                if c.get("state") == "ACTIVE"
+                and c.get("sender") == sender["eth_address"]
+                and c.get("remaining_balance", 0) > amount
+            ]
+            if not eligible:
+                continue
+
+            # 60% direct, 40% routed
+            use_direct = random.random() < 0.6 or len(agent_info) <= 2
+
+            if use_direct:
+                ch = random.choice(eligible)
+                try:
+                    api(s_port, "/pay", {"channel_id": ch["channel_id"], "amount": amount})
+                    ok_count += 1
+                    sent = True
+                except Exception:
+                    fail_count += 1
+                    sent = True
+            else:
+                # Pick a random receiver that isn't the sender
+                others = [a for a in agent_info if a["peer_id"] != sender["peer_id"]]
+                if not others:
+                    continue
+                receiver = random.choice(others)
+                try:
+                    api(s_port, "/route-pay", {
+                        "destination": receiver["peer_id"],
+                        "amount": amount,
+                    })
+                    ok_count += 1
+                    sent = True
+                except Exception:
+                    fail_count += 1
+                    sent = True
+            break
+
+        if not sent:
+            fail_count += 1
+
+        total = r + 1
+        if total % 10 == 0 or total == rounds:
+            typer.echo(f"  [{total}/{rounds}] {ok_count} ok, {fail_count} fail")
+
+    # ── Summary ─────────────────────────────────────────────────
+    typer.echo(f"\n{'━' * 50}")
+    typer.echo("  Simulation Complete")
+    typer.echo(f"  {ok_count} ok / {fail_count} fail / {rounds} total")
+    success_rate = (ok_count / rounds * 100) if rounds > 0 else 0
+    typer.echo(f"  Success rate: {success_rate:.1f}%")
+    typer.echo(f"{'━' * 50}\n")
+
+    # Cleanup spawned processes if we started them
+    if spawned_procs:
+        typer.echo("[cleanup] Stopping spawned agents...")
+        cleanup_procs()
+        typer.echo("  Done.\n")
+
+
 if __name__ == "__main__":
     app()

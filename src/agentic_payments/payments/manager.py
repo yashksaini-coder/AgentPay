@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import structlog
+import trio
 
 from agentic_payments.payments.channel import ChannelError, ChannelState, PaymentChannel
 from agentic_payments.payments.voucher import SignedVoucher
@@ -23,6 +24,7 @@ class ChannelManager:
     def __init__(self, local_address: str) -> None:
         self.local_address = local_address
         self.channels: dict[bytes, PaymentChannel] = {}
+        self._channel_locks: dict[bytes, trio.Lock] = {}
 
     def get_channel(self, channel_id: bytes) -> PaymentChannel:
         """Get a channel by ID."""
@@ -30,6 +32,14 @@ class ChannelManager:
         if channel is None:
             raise KeyError(f"Channel not found: {channel_id.hex()[:16]}")
         return channel
+
+    def _get_channel_lock(self, channel_id: bytes) -> trio.Lock:
+        """Get or create a per-channel lock for serializing payments."""
+        lock = self._channel_locks.get(channel_id)
+        if lock is None:
+            lock = trio.Lock()
+            self._channel_locks[channel_id] = lock
+        return lock
 
     def list_channels(self, state: ChannelState | None = None) -> list[PaymentChannel]:
         """List channels, optionally filtered by state."""
@@ -132,7 +142,10 @@ class ChannelManager:
                 f"Close amount mismatch: got {msg.final_amount}, expected {channel.total_paid}"
             )
 
-        channel.request_close()
+        if msg.cooperative:
+            channel.cooperative_close()
+        else:
+            channel.request_close()
         logger.info(
             "channel_close_requested",
             channel_id=msg.channel_id.hex()[:16],
@@ -151,46 +164,49 @@ class ChannelManager:
 
         Sends the voucher to the peer FIRST, then applies locally only on success.
         This prevents the channel from becoming wedged if the network send fails.
+        Uses per-channel lock to prevent nonce races from concurrent payments.
         """
         if amount <= 0:
             raise ValueError("Payment amount must be positive")
 
-        channel = self.get_channel(channel_id)
+        lock = self._get_channel_lock(channel_id)
+        async with lock:
+            channel = self.get_channel(channel_id)
 
-        if channel.sender != self.local_address:
-            raise ValueError(
-                "Only the channel sender can send payments. "
-                f"This node ({self.local_address[:10]}...) is the receiver, "
-                f"not the sender ({channel.sender[:10]}...)."
-            )
-        new_nonce = channel.nonce + 1
-        new_total = channel.total_paid + amount
+            if channel.sender != self.local_address:
+                raise ValueError(
+                    "Only the channel sender can send payments. "
+                    f"This node ({self.local_address[:10]}...) is the receiver, "
+                    f"not the sender ({channel.sender[:10]}...)."
+                )
+            new_nonce = channel.nonce + 1
+            new_total = channel.total_paid + amount
 
-        if new_total > channel.total_deposit:
-            raise ChannelError(
-                f"Voucher amount {new_total} exceeds deposit {channel.total_deposit} "
-                f"(total_paid={channel.total_paid}, payment={amount})"
-            )
+            if new_total > channel.total_deposit:
+                raise ChannelError(
+                    f"Voucher amount {new_total} exceeds deposit {channel.total_deposit} "
+                    f"(total_paid={channel.total_paid}, payment={amount})"
+                )
 
-        voucher = SignedVoucher.create(
-            channel_id=channel_id,
-            nonce=new_nonce,
-            amount=new_total,
-            private_key=private_key,
-        )
-
-        # Send first — if this fails, channel state is unchanged
-        await send_fn(
-            PaymentUpdate(
+            voucher = SignedVoucher.create(
                 channel_id=channel_id,
-                nonce=voucher.nonce,
-                amount=voucher.amount,
-                timestamp=voucher.timestamp,
-                signature=voucher.signature,
+                nonce=new_nonce,
+                amount=new_total,
+                private_key=private_key,
             )
-        )
 
-        # Commit locally only after successful send
-        channel.apply_voucher(voucher)
+            # Send first — if this fails, channel state is unchanged
+            await send_fn(
+                PaymentUpdate(
+                    channel_id=channel_id,
+                    nonce=voucher.nonce,
+                    amount=voucher.amount,
+                    timestamp=voucher.timestamp,
+                    signature=voucher.signature,
+                )
+            )
 
-        return voucher
+            # Commit locally only after successful send
+            channel.apply_voucher(voucher)
+
+            return voucher

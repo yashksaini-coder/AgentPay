@@ -83,7 +83,7 @@ class MockNode:
 
     async def close_channel(self, channel_id: bytes):
         channel = self.channel_manager.get_channel(channel_id)
-        channel.request_close()
+        channel.cooperative_close()
         channel.settle()
 
 

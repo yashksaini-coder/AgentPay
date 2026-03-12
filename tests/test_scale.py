@@ -207,7 +207,7 @@ class TestScaleUnidirectional:
             await r.manager.handle_close_request(close_msg)
 
             # Close + settle sender
-            ch_s.request_close()
+            ch_s.cooperative_close()
             ch_s.settle()
             # Settle receiver
             ch_r.settle()

@@ -9,6 +9,8 @@ import structlog
 from quart import request, websocket
 from quart_trio import QuartTrio
 
+from agentic_payments.payments.channel import ChannelError
+
 logger = structlog.get_logger(__name__)
 
 
@@ -172,6 +174,10 @@ def register_routes(app: QuartTrio) -> None:
             await node.connect(maddr)
             _log_api("/connect", 200, (time.monotonic() - t0) * 1000, method="POST", detail=maddr[-20:])
             return {"status": "connected", "multiaddr": maddr}, 200
+        except ValueError as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/connect", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
         except Exception as e:
             ms = (time.monotonic() - t0) * 1000
             logger.exception("api_connect_peer_error")
@@ -216,6 +222,10 @@ def register_routes(app: QuartTrio) -> None:
             ms = (time.monotonic() - t0) * 1000
             _log_api("/channels", 201, ms, method="POST", detail=f"opened {channel.channel_id.hex()[:12]} deposit={deposit_int}")
             return {"channel": channel.to_dict()}, 201
+        except (ChannelError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/channels", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
         except Exception as e:
             ms = (time.monotonic() - t0) * 1000
             logger.exception("api_open_channel_error")
@@ -259,6 +269,10 @@ def register_routes(app: QuartTrio) -> None:
             ms = (time.monotonic() - t0) * 1000
             _log_api("/pay", 404, ms, method="POST", error="channel not found")
             return {"error": "Channel not found"}, 404
+        except (ChannelError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/pay", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
         except Exception as e:
             ms = (time.monotonic() - t0) * 1000
             logger.exception("api_send_payment_error")
@@ -284,6 +298,10 @@ def register_routes(app: QuartTrio) -> None:
             ms = (time.monotonic() - t0) * 1000
             _log_api(f"/channels/{channel_id[:8]}/close", 404, ms, method="POST", error="not found")
             return {"error": "Channel not found"}, 404
+        except (ChannelError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/channels/{channel_id[:8]}/close", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
         except Exception as e:
             ms = (time.monotonic() - t0) * 1000
             logger.exception("api_close_channel_error")
@@ -409,9 +427,9 @@ def register_routes(app: QuartTrio) -> None:
             hops = result.get("route", {}).get("hop_count", "?")
             _log_api("/route-pay", 200, ms, method="POST", detail=f"amount={amount_int} hops={hops} to {destination[:12]}")
             return {"payment": result}, 200
-        except RuntimeError as e:
+        except (RuntimeError, ChannelError, ValueError) as e:
             ms = (time.monotonic() - t0) * 1000
-            _log_api("/route-pay", 400, ms, method="POST", error=str(e)[:60])
+            _log_api("/route-pay", 400, ms, method="POST", error=str(e))
             return {"error": str(e)}, 400
         except Exception as e:
             ms = (time.monotonic() - t0) * 1000

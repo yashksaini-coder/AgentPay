@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "forge-std/interfaces/IERC20.sol";
+
 /**
  * @title PaymentChannel
- * @notice Minimal unidirectional payment channel for agentic micropayments.
+ * @notice Unidirectional payment channel for agentic micropayments.
+ *         Supports both native ETH and ERC-20 token deposits.
  *
  * Flow:
- *   1. Sender opens channel with ETH deposit
+ *   1. Sender opens channel with ETH deposit (or ERC-20 via approve + openTokenChannel)
  *   2. Off-chain: sender signs vouchers (nonce, cumulative amount)
  *   3. Receiver submits highest-nonce voucher to close
- *   4. After challenge period, funds are released
+ *   4. Challenge period allows dispute with higher-nonce voucher
+ *   5. After challenge period, funds are released via withdraw
  */
 contract PaymentChannel {
     struct Channel {
@@ -20,6 +24,7 @@ contract PaymentChannel {
         uint256 closingAmount;
         uint256 expiration; // challenge period end timestamp
         bool closed;
+        address token; // address(0) = native ETH, otherwise ERC-20
     }
 
     uint256 public constant MIN_CHALLENGE_PERIOD = 1 hours;
@@ -32,12 +37,19 @@ contract PaymentChannel {
         address indexed receiver,
         uint256 deposit
     );
+    event TokenChannelOpened(
+        bytes32 indexed channelId,
+        address indexed sender,
+        address indexed receiver,
+        uint256 deposit,
+        address token
+    );
     event ChannelCloseInitiated(bytes32 indexed channelId, uint256 amount, uint256 expiration);
     event ChannelChallenged(bytes32 indexed channelId, uint256 amount, uint256 nonce);
     event ChannelClosed(bytes32 indexed channelId, uint256 amount);
 
     /**
-     * @notice Open a new payment channel.
+     * @notice Open a new payment channel with native ETH.
      * @param receiver The payment receiver address.
      * @param duration Challenge period duration in seconds.
      * @return channelId The unique channel identifier.
@@ -63,10 +75,55 @@ contract PaymentChannel {
             closingNonce: 0,
             closingAmount: 0,
             expiration: 0,
-            closed: false
+            closed: false,
+            token: address(0)
         });
 
         emit ChannelOpened(channelId, msg.sender, receiver, msg.value);
+    }
+
+    /**
+     * @notice Open a new payment channel with an ERC-20 token.
+     * @dev Sender must approve this contract for `amount` tokens first.
+     * @param receiver The payment receiver address.
+     * @param duration Challenge period duration in seconds.
+     * @param token The ERC-20 token contract address.
+     * @param amount The token deposit amount.
+     * @return channelId The unique channel identifier.
+     */
+    function openTokenChannel(
+        address receiver,
+        uint256 duration,
+        address token,
+        uint256 amount
+    ) external returns (bytes32 channelId) {
+        require(amount > 0, "Deposit required");
+        require(receiver != address(0), "Invalid receiver");
+        require(receiver != msg.sender, "Cannot pay self");
+        require(token != address(0), "Invalid token");
+        require(duration >= MIN_CHALLENGE_PERIOD, "Duration too short");
+
+        // Transfer tokens from sender to this contract
+        bool success = IERC20(token).transferFrom(msg.sender, address(this), amount);
+        require(success, "Token transfer failed");
+
+        channelId = keccak256(
+            abi.encodePacked(msg.sender, receiver, block.timestamp, amount, token)
+        );
+        require(channels[channelId].deposit == 0, "Channel exists");
+
+        channels[channelId] = Channel({
+            sender: msg.sender,
+            receiver: receiver,
+            deposit: amount,
+            closingNonce: 0,
+            closingAmount: 0,
+            expiration: 0,
+            closed: false,
+            token: token
+        });
+
+        emit TokenChannelOpened(channelId, msg.sender, receiver, amount, token);
     }
 
     /**
@@ -149,11 +206,23 @@ contract PaymentChannel {
         uint256 receiverAmount = ch.closingAmount;
         uint256 senderRefund = ch.deposit - receiverAmount;
 
-        if (receiverAmount > 0) {
-            payable(ch.receiver).transfer(receiverAmount);
-        }
-        if (senderRefund > 0) {
-            payable(ch.sender).transfer(senderRefund);
+        if (ch.token == address(0)) {
+            // Native ETH settlement
+            if (receiverAmount > 0) {
+                payable(ch.receiver).transfer(receiverAmount);
+            }
+            if (senderRefund > 0) {
+                payable(ch.sender).transfer(senderRefund);
+            }
+        } else {
+            // ERC-20 token settlement
+            IERC20 token = IERC20(ch.token);
+            if (receiverAmount > 0) {
+                require(token.transfer(ch.receiver, receiverAmount), "Receiver transfer failed");
+            }
+            if (senderRefund > 0) {
+                require(token.transfer(ch.sender, senderRefund), "Sender refund failed");
+            }
         }
 
         emit ChannelClosed(channelId, receiverAmount);
@@ -176,6 +245,13 @@ contract PaymentChannel {
             ch.sender, ch.receiver, ch.deposit,
             ch.closingNonce, ch.closingAmount, ch.expiration, ch.closed
         );
+    }
+
+    /**
+     * @notice Query channel token address (address(0) = native ETH).
+     */
+    function getChannelToken(bytes32 channelId) external view returns (address) {
+        return channels[channelId].token;
     }
 
     function _toEthSignedMessageHash(bytes32 hash) internal pure returns (bytes32) {

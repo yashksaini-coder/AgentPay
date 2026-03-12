@@ -57,7 +57,7 @@ class TestFullPaymentFlow:
         assert ch_a.remaining_balance == 700_000
 
         # Close the channel
-        ch_a.request_close()
+        ch_a.cooperative_close()
         assert ch_a.state == ChannelState.CLOSING
 
         ch_a.settle()

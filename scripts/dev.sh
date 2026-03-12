@@ -5,8 +5,8 @@
 #  Starts N agent nodes + Next.js frontend.
 #
 #  Usage:
-#    ./scripts/dev.sh                # 2 agents (default)
-#    ./scripts/dev.sh --agents 5     # 5 agents
+#    ./scripts/dev.sh                # 5 agents (default)
+#    ./scripts/dev.sh --agents 3     # 3 agents
 #    ./scripts/dev.sh --no-agents    # frontend only
 #
 #  Port allocation per agent (0-indexed):
@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # ── Parse arguments ──────────────────────────────────────
-NUM_AGENTS=2
+NUM_AGENTS=5
 NO_AGENTS=false
 
 while [[ $# -gt 0 ]]; do

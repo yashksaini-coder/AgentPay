@@ -88,9 +88,10 @@ export function useAgentManager() {
 
   const startDefaultAgents = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    // Start Agent A (8080) and Agent B (8081)
-    await startAgent({ apiPort: 8080 });
-    await startAgent({ apiPort: 8081 });
+    // Start 5 agents (A-E) on ports 8080-8084
+    for (let i = 0; i < 5; i++) {
+      await startAgent({ apiPort: 8080 + i });
+    }
     setState((prev) => ({ ...prev, loading: false }));
   }, [startAgent]);
 

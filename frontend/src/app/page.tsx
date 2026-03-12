@@ -6,20 +6,23 @@ import { useNetworkEvents, type NetworkEvent } from "@/lib/useNetworkEvents";
 import { useAgentManager } from "@/lib/useAgentManager";
 import { formatWei, type Channel } from "@/lib/api";
 import NetworkGraph, { type LoadingNode, type GraphInteraction, type AnimatingRoute } from "@/components/NetworkGraph";
+import DiscoveryPanel from "@/components/DiscoveryPanel";
+import NegotiationTimeline from "@/components/NegotiationTimeline";
+import ReceiptChain from "@/components/ReceiptChain";
+import PolicyEditor from "@/components/PolicyEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Area, AreaChart, XAxis } from "recharts";
 
 // Status colors for operations
 const STATUS_EXECUTING = "#3b82f6";   // blue
 const STATUS_COMPLETED = "#22c55e";   // green
-const STATUS_FAILED = "#a855f7";      // purple
+const STATUS_FAILED = "#fbbf24";      // yellow
 const NODE_NEUTRAL = "#8b8fa3";       // grey for dots
 
 // ── AgentHook — render-less hook bridge ──
@@ -130,6 +133,39 @@ export default function NetworkPage() {
   const hasAgents = agentPorts.length > 0;
   const lbl = useCallback((a: AgentState) => { const i = allAgents.indexOf(a); return i >= 0 ? agentLabel(i) : "Agent"; }, [allAgents, agentLabel]);
 
+  // Trust scores for graph coloring
+  const [trustScores, setTrustScores] = useState<Record<string, number>>({});
+  const [negotiationCount, setNegotiationCount] = useState(0);
+  const [discoveredCount, setDiscoveredCount] = useState(0);
+  const [receiptCount, setReceiptCount] = useState(0);
+  useEffect(() => {
+    const agent = onlineAgents[0];
+    if (!agent?.api) return;
+    const load = async () => {
+      try {
+        const res = await agent.api.getReputation();
+        const scores: Record<string, number> = {};
+        for (const p of res.peers) scores[p.peer_id] = p.trust_score;
+        setTrustScores(scores);
+      } catch { /* ignore */ }
+      try {
+        const neg = await agent.api.getNegotiations();
+        setNegotiationCount(neg.negotiations?.length ?? 0);
+      } catch { /* ignore */ }
+      try {
+        const disc = await agent.api.getDiscoveredAgents();
+        setDiscoveredCount(disc.agents?.length ?? 0);
+      } catch { /* ignore */ }
+      try {
+        const rec = await agent.api.getReceipts();
+        setReceiptCount(rec.channels?.reduce((s: number, c: { receipt_count: number }) => s + c.receipt_count, 0) ?? 0);
+      } catch { /* ignore */ }
+    };
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
+  }, [onlineAgents]);
+
   // Collect all known channels from all agents for route-pay graph seeding
   const collectKnownChannels = useCallback(() => {
     const seen = new Set<string>();
@@ -140,7 +176,6 @@ export default function NetworkPage() {
       for (const ch of agent.channels) {
         if (seen.has(ch.channel_id)) continue;
         seen.add(ch.channel_id);
-        // Find the other agent by eth_address to get peer_id
         const senderAgent = allAgents.find((a) => a.identity?.eth_address === ch.sender);
         const receiverAgent = allAgents.find((a) => a.identity?.eth_address === ch.receiver);
         const peerA = senderAgent?.identity?.peer_id;
@@ -170,23 +205,18 @@ export default function NetworkPage() {
       const target = allAgents.find((a) => a.identity?.peer_id === gi.targetPeerId);
       if (!source || !target) return;
 
-      // Check if source (first-clicked node) has an outbound channel to target
       const chSourceToTarget = source.channels.find(
         (c) => c.state === "ACTIVE" && c.peer_id === gi.targetPeerId && c.sender === source.identity?.eth_address
       );
 
       if (chSourceToTarget) {
-        // Source can pay target directly
         setInteraction({ mode: "payment", sourceAgent: source, targetAgent: target, channelId: chSourceToTarget.channel_id });
       } else {
-        // No outbound channel from source → offer route-pay (HTLC) or open channel
-        // Check if ANY channel exists between them (even reverse) to decide default mode
         const hasAnyChannel = source.channels.some(
           (c) => c.state === "ACTIVE" && c.peer_id === gi.targetPeerId
         ) || target.channels.some(
           (c) => c.state === "ACTIVE" && c.peer_id === gi.sourcePeerId
         );
-        // If there's a reverse channel, suggest route-pay; otherwise open new channel
         setInteraction({
           mode: hasAnyChannel ? "route-pay" : "channel",
           sourceAgent: source,
@@ -194,7 +224,6 @@ export default function NetworkPage() {
         });
       }
     } else if (gi.type === "channel-click") {
-      // Find the channel, then identify which agent is the sender (can pay)
       let senderAgent: typeof allAgents[0] | undefined;
       let ch: Channel | undefined;
       for (const a of allAgents) {
@@ -212,6 +241,14 @@ export default function NetworkPage() {
     }
   }, [allAgents]);
 
+  // Flash green (success) or yellow (fail) on nodes, then clear after delay
+  const flashResult = useCallback((pids: string[], ok: boolean) => {
+    const color = ok ? STATUS_COMPLETED : STATUS_FAILED;
+    setLoadingNodes(pids.map((peerId) => ({ peerId, color })));
+    setAnimatingRoute(null);
+    setTimeout(() => setLoadingNodes([]), 1200);
+  }, []);
+
   const handleOpenChannel = async () => {
     if (!interaction?.sourceAgent || !interaction.targetAgent) return;
     const sender = interaction.sourceAgent;
@@ -221,17 +258,14 @@ export default function NetworkPage() {
     const sPid = sender.identity?.peer_id;
     const rPid = receiver.identity.peer_id;
 
-    // Close popup, show connecting animation on both nodes
     setInteraction(null);
     const ln: LoadingNode[] = [];
     if (sPid) ln.push({ peerId: sPid, color: STATUS_EXECUTING });
     if (rPid) ln.push({ peerId: rPid, color: STATUS_EXECUTING });
     setLoadingNodes(ln);
-    // Show animated route line between the two nodes during connection
     if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: STATUS_EXECUTING, type: "channel" });
 
     try {
-      // Auto-connect peers before opening channel
       const addrs = receiver.identity?.addrs ?? [];
       const tcp = addrs.find((a) => a.includes("/tcp/") && !a.includes("/ws"));
       if (tcp) {
@@ -243,11 +277,11 @@ export default function NetworkPage() {
         sender.api.openChannel(receiver.identity.peer_id, receiver.identity.eth_address, parseInt(interactionDeposit)),
         new Promise((r) => setTimeout(r, 1800)),
       ]);
-      setLoadingNodes([]); setAnimatingRoute(null);
+      flashResult([sPid, rPid].filter(Boolean) as string[], true);
       pushEvent({ type: "channel_open", from: lbl(sender), message: `Opened channel to ${lbl(receiver)}`, meta: `Deposit: ${parseInt(interactionDeposit).toLocaleString()} wei` });
       sender.refresh(); receiver.refresh();
     } catch (e: unknown) {
-      setLoadingNodes([]); setAnimatingRoute(null);
+      flashResult([sPid, rPid].filter(Boolean) as string[], false);
       pushEvent({ type: "status", from: lbl(sender), message: `Channel open failed: ${e instanceof Error ? e.message : "unknown"}` });
     }
   };
@@ -263,7 +297,6 @@ export default function NetworkPage() {
     const rPid = receiver.identity.peer_id;
     const knownChannels = collectKnownChannels();
 
-    // Close dialog and show animation
     setInteraction(null);
     const ln: LoadingNode[] = [];
     if (sPid) ln.push({ peerId: sPid, color: STATUS_EXECUTING });
@@ -271,7 +304,6 @@ export default function NetworkPage() {
     setLoadingNodes(ln);
 
     try {
-      // First find the route so we can animate it
       let routeHops: string[] = [];
       try {
         const routeRes = await sender.api.findRoute(rPid, amountVal, knownChannels);
@@ -287,7 +319,8 @@ export default function NetworkPage() {
         sender.api.routePayment(rPid, amountVal, knownChannels),
         new Promise((r) => setTimeout(r, 2500)),
       ]);
-      setLoadingNodes([]); setAnimatingRoute(null);
+      const allPids = animatingRoute?.hops ?? [sPid, rPid].filter(Boolean) as string[];
+      flashResult(allPids, true);
       const hops = res.payment.route.hop_count;
       pushEvent({
         type: "payment",
@@ -297,7 +330,7 @@ export default function NetworkPage() {
       });
       sender.refresh(); receiver.refresh();
     } catch (e: unknown) {
-      setLoadingNodes([]); setAnimatingRoute(null);
+      flashResult([sPid, rPid].filter(Boolean) as string[], false);
       pushEvent({ type: "status", from: lbl(sender), message: `Route payment failed: ${e instanceof Error ? e.message : "unknown"}` });
     }
   };
@@ -312,7 +345,6 @@ export default function NetworkPage() {
     const rAgent = ch ? allAgents.find((a) => a.identity?.eth_address === ch.receiver) : null;
     const rPid = rAgent?.identity?.peer_id;
 
-    // Close dialog immediately so user can see the transfer animation
     setInteraction(null);
 
     const ln: LoadingNode[] = [];
@@ -326,11 +358,11 @@ export default function NetworkPage() {
         sender.api.sendPayment(channelId, amountVal),
         new Promise((r) => setTimeout(r, 1800)),
       ]);
-      setLoadingNodes([]); setAnimatingRoute(null);
+      flashResult([sPid, rPid].filter(Boolean) as string[], true);
       pushEvent({ type: "payment", from: lbl(sender), message: `Sent ${amountVal.toLocaleString()} wei`, meta: `Nonce: ${res.voucher.nonce}` });
       sender.refresh();
     } catch (e: unknown) {
-      setLoadingNodes([]); setAnimatingRoute(null);
+      flashResult([sPid, rPid].filter(Boolean) as string[], false);
       pushEvent({ type: "status", from: lbl(sender), message: `Payment failed: ${e instanceof Error ? e.message : "unknown error"}` });
     }
   };
@@ -342,42 +374,44 @@ export default function NetworkPage() {
       ))}
 
       {/* ── Top bar ── */}
-      <header className="shrink-0 flex items-center justify-between px-4 py-2 border-b border-border-subtle z-10">
+      <header className="shrink-0 flex items-center justify-between px-4 py-1.5 border-b border-border-subtle z-10">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold tracking-tight text-gradient">AgentPay</h1>
-          <span className="text-[9px] font-mono text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded-md border border-border">v0.1.0</span>
+          <span className="text-[8px] font-mono text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded-md border border-border">libp2p + ETH</span>
         </div>
-        <div className="flex items-center gap-3">
-          {manager.loading && <span className="w-2.5 h-2.5 border border-accent/30 border-t-accent rounded-full animate-spin" />}
+        <div className="flex items-center gap-3 text-[9px] font-mono">
+          <div className="flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${onlineCount > 0 ? "bg-success animate-pulse-soft" : "bg-text-muted/30"}`} />
+            <span className={onlineCount === allAgents.length && onlineCount > 0 ? "text-success" : "text-text-muted"}>{onlineCount}/{allAgents.length} nodes</span>
+          </div>
+          <span className="text-border-subtle">|</span>
+          <span className="text-text-muted">{activeChannels} ch</span>
+          <span className="text-border-subtle">|</span>
+          <span className="text-text-muted">{formatWei(totalPaid)} paid</span>
+          {Object.keys(trustScores).length > 0 && (
+            <>
+              <span className="text-border-subtle">|</span>
+              <span className="text-accent">{(Object.values(trustScores).reduce((a, b) => a + b, 0) / Object.values(trustScores).length * 100).toFixed(0)}% trust</span>
+            </>
+          )}
         </div>
       </header>
 
       {/* ── Main: graph + sidebars ── */}
       <div className="flex-1 flex min-h-0">
-        {/* ── Left: stats sidebar ── */}
-        <aside className="w-[220px] shrink-0 border-r border-border-subtle overflow-y-auto p-3 space-y-4">
-          <Section title="Network">
-            <StatRow label="Nodes" value={`${onlineCount} / ${allAgents.length}`} />
-            <StatRow label="Peers" value={String(totalPeers)} />
-            <StatRow label="Channels" value={`${activeChannels} active / ${totalChannels}`} />
-          </Section>
-
-          <Section title="Financial">
-            <StatRow label="Deposited" value={formatWei(totalDeposited)} accent />
-            <StatRow label="Paid" value={formatWei(totalPaid)} />
-            <StatRow label="Remaining" value={formatWei(totalRemaining)} />
-          </Section>
-
-          {paymentHistory.length > 1 && (
-            <Section title="Payment Flow">
-              <PaymentFlowChart data={paymentHistory} />
-            </Section>
-          )}
-        </aside>
+        {/* ── Left: stats + trust sidebar ── */}
+        <LeftSidebar
+          onlineCount={onlineCount} allAgents={allAgents} totalPeers={totalPeers}
+          activeChannels={activeChannels} totalChannels={totalChannels}
+          totalDeposited={totalDeposited} totalPaid={totalPaid} totalRemaining={totalRemaining}
+          discoveredCount={discoveredCount} negotiationCount={negotiationCount} receiptCount={receiptCount}
+          trustScores={trustScores} agentLabel={agentLabel}
+          paymentHistory={paymentHistory} onlineAgents={onlineAgents}
+        />
 
         {/* ── Center: graph ── */}
         <main className="flex-1 relative min-h-0">
-          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} animatingRoute={animatingRoute} onInteraction={handleGraphInteraction} agentLabels={agentLabel} />
+          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} animatingRoute={animatingRoute} onInteraction={handleGraphInteraction} agentLabels={agentLabel} trustScores={trustScores} />
 
           {/* Interaction popup overlay */}
           {interaction && (
@@ -412,11 +446,9 @@ export default function NetworkPage() {
 
           {!hasAgents && (
             <div className="absolute inset-0 flex items-center justify-center bg-surface/60 backdrop-blur-sm z-10">
-              <div className="text-center">
-                <p className="text-sm text-text-secondary mb-3">No agents running</p>
-                <Button onClick={manager.startDefaultAgents} disabled={manager.loading} size="sm">
-                  {manager.loading ? "Starting..." : "Start Agents"}
-                </Button>
+              <div className="text-center space-y-2">
+                <p className="text-sm text-text-secondary">No agents running</p>
+                <p className="text-[10px] text-text-muted font-mono">Start agents with: ./scripts/dev.sh (default: 5 agents)</p>
               </div>
             </div>
           )}
@@ -426,7 +458,6 @@ export default function NetworkPage() {
         <RightSidebar
           events={events}
           hasAgents={hasAgents}
-          manager={manager}
           allAgents={allAgents}
           onlineAgents={onlineAgents}
           lbl={lbl}
@@ -438,6 +469,7 @@ export default function NetworkPage() {
           agentNames={agentNames}
           setAgentNames={setAgentNames}
           getAgents={getAgents}
+          manager={manager}
         />
       </div>
     </div>
@@ -494,17 +526,108 @@ function PaymentFlowChart({ data }: { data: { t: string; amount: number }[] }) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// Left sidebar (Stats + Trust tabs)
+// ═══════════════════════════════════════════════════════════
+
+function LeftSidebar({
+  onlineCount, allAgents, totalPeers, activeChannels, totalChannels,
+  totalDeposited, totalPaid, totalRemaining,
+  discoveredCount, negotiationCount, receiptCount,
+  trustScores, agentLabel, paymentHistory, onlineAgents,
+}: {
+  onlineCount: number;
+  allAgents: AgentState[];
+  totalPeers: number;
+  activeChannels: number;
+  totalChannels: number;
+  totalDeposited: number;
+  totalPaid: number;
+  totalRemaining: number;
+  discoveredCount: number;
+  negotiationCount: number;
+  receiptCount: number;
+  trustScores: Record<string, number>;
+  agentLabel: (i: number) => string;
+  paymentHistory: { t: string; amount: number }[];
+  onlineAgents: AgentState[];
+}) {
+  const firstOnlineAgent = onlineAgents[0];
+  const trustApi = firstOnlineAgent?.api ?? null;
+
+  return (
+    <aside className="w-[240px] shrink-0 border-r border-border-subtle overflow-y-auto p-3 space-y-4">
+      <Section title="Network">
+        <StatRow label="Nodes" value={`${onlineCount} / ${allAgents.length}`} />
+        <StatRow label="Peers" value={String(totalPeers)} />
+        <StatRow label="Channels" value={`${activeChannels} active / ${totalChannels}`} />
+      </Section>
+
+      <Section title="Financial">
+        <StatRow label="Deposited" value={formatWei(totalDeposited)} accent />
+        <StatRow label="Paid" value={formatWei(totalPaid)} />
+        <StatRow label="Remaining" value={formatWei(totalRemaining)} />
+      </Section>
+
+      <Section title="Trust & Discovery">
+        <StatRow label="Discovered" value={String(discoveredCount)} />
+        <StatRow label="Negotiations" value={String(negotiationCount)} />
+        <StatRow label="Receipts" value={String(receiptCount)} />
+        {Object.keys(trustScores).length > 0 && (
+          <StatRow label="Avg Trust" value={`${(Object.values(trustScores).reduce((a, b) => a + b, 0) / Object.values(trustScores).length * 100).toFixed(0)}%`} accent />
+        )}
+      </Section>
+
+      {/* Agent Roster */}
+      {allAgents.length > 0 && (
+        <Section title="Agents">
+          <div className="space-y-1.5">
+            {allAgents.map((a, i) => {
+              const pid = a.identity?.peer_id;
+              const ts = pid ? trustScores[pid] : undefined;
+              return (
+                <div key={i} className="flex items-center gap-1.5 text-[10px]">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${a.online ? "bg-success" : "bg-text-muted/30"}`} />
+                  <span className="text-text-secondary truncate flex-1">{agentLabel(i)}</span>
+                  {ts !== undefined && (
+                    <span className={`font-mono text-[9px] ${ts >= 0.7 ? "text-success" : ts >= 0.4 ? "text-warning" : "text-danger"}`}>
+                      {(ts * 100).toFixed(0)}%
+                    </span>
+                  )}
+                  <span className="text-text-muted/50 font-mono text-[8px]">{a.channels.filter(c => c.state === "ACTIVE").length}ch</span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
+      {paymentHistory.length > 1 && (
+        <Section title="Payment Flow">
+          <PaymentFlowChart data={paymentHistory} />
+        </Section>
+      )}
+
+      {/* Trust panel inline below stats */}
+      {trustApi ? (
+        <TrustPanel api={trustApi} trustScores={trustScores} />
+      ) : (
+        <div className="text-center text-text-muted text-[10px] py-4">Start agents to view trust data</div>
+      )}
+    </aside>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
 // Right sidebar
 // ═══════════════════════════════════════════════════════════
 
 function RightSidebar({
-  events, hasAgents, manager, allAgents, onlineAgents, lbl, agentLabel,
+  events, hasAgents, allAgents, onlineAgents, lbl, agentLabel,
   setLoadingNodes, setAnimatingRoute, collectKnownChannels, pushEvent,
-  agentNames, setAgentNames, getAgents,
+  agentNames, setAgentNames, getAgents, manager,
 }: {
   events: NetworkEvent[];
   hasAgents: boolean;
-  manager: ReturnType<typeof useAgentManager>;
   allAgents: AgentState[];
   onlineAgents: AgentState[];
   lbl: (a: AgentState) => string;
@@ -516,66 +639,77 @@ function RightSidebar({
   agentNames: Map<number, string>;
   setAgentNames: React.Dispatch<React.SetStateAction<Map<number, string>>>;
   getAgents: () => AgentState[];
+  manager: ReturnType<typeof useAgentManager>;
 }) {
-  const [activeTab, setActiveTab] = useState<"feed" | "actions">("feed");
+  const [activeTab, setActiveTab] = useState<"simulate" | "actions">("simulate");
 
   return (
-    <aside className="w-[300px] shrink-0 border-l border-border-subtle flex flex-col bg-surface-raised/30">
-      {/* Quick action bar — always visible */}
-      <div className="shrink-0 px-3 pt-3 pb-2 space-y-2 border-b border-border-subtle">
-        <div className="flex gap-1.5">
-          {!hasAgents && (
-            <Button onClick={manager.startDefaultAgents} disabled={manager.loading} size="sm" className="flex-1 text-[10px] h-7">
-              Boot Agents
-            </Button>
-          )}
-          <Button onClick={() => manager.startAgent()} disabled={manager.loading} variant="outline" size="sm" className="flex-1 text-[10px] h-7">
-            + Node
-          </Button>
+    <aside className="w-[320px] shrink-0 border-l border-border-subtle flex flex-col bg-surface-raised/30">
+      {/* ── Top: Simulate / Actions tabs ── */}
+      <div className="shrink-0 px-3 pt-2 pb-1 border-b border-border-subtle">
+        <div className="flex rounded-lg bg-surface-overlay/50 p-0.5">
+          <button
+            onClick={() => setActiveTab("simulate")}
+            className={`flex-1 px-3 py-1.5 text-[11px] font-medium rounded-md transition-colors ${
+              activeTab === "simulate" ? "bg-white/[0.08] text-text-primary" : "text-text-muted hover:text-text-secondary"
+            }`}
+          >
+            Simulate
+          </button>
+          <button
+            onClick={() => setActiveTab("actions")}
+            className={`flex-1 px-3 py-1.5 text-[11px] font-medium rounded-md transition-colors ${
+              activeTab === "actions" ? "bg-white/[0.08] text-text-primary" : "text-text-muted hover:text-text-secondary"
+            }`}
+          >
+            Actions
+          </button>
         </div>
       </div>
 
-      {/* Tab switcher */}
-      <div className="shrink-0 px-3 pt-2 pb-1">
-        <AnimatedTabs
-          tabs={[
-            { id: "feed", label: `Feed${events.length > 0 ? ` (${events.length})` : ""}` },
-            { id: "actions", label: "Actions" },
-          ]}
-          defaultTab="feed"
-          onChange={(id) => setActiveTab(id as "feed" | "actions")}
-        />
-      </div>
-
-      {/* Tab content */}
+      {/* Tab content — takes available space */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {activeTab === "feed" ? (
-          <EventsFeed events={events} />
-        ) : (
+        {activeTab === "simulate" ? (
           <div className="p-3 space-y-3">
             <SimulationPanel
-              manager={manager} allAgents={allAgents} onlineAgents={onlineAgents} lbl={lbl} agentLabel={agentLabel}
+              allAgents={allAgents} onlineAgents={onlineAgents} lbl={lbl} agentLabel={agentLabel}
               setLoadingNodes={setLoadingNodes} setAnimatingRoute={setAnimatingRoute}
               collectKnownChannels={collectKnownChannels} pushEvent={pushEvent}
               agentNames={agentNames} setAgentNames={setAgentNames}
-              getAgents={getAgents}
+              getAgents={getAgents} manager={manager}
             />
+          </div>
+        ) : (
+          <div className="p-3 space-y-3">
+            <NegotiateForm onlineAgents={onlineAgents} lbl={lbl} pushEvent={pushEvent} />
             <RoutePaymentForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} setLoadingNodes={setLoadingNodes} setAnimatingRoute={setAnimatingRoute} collectKnownChannels={collectKnownChannels} pushEvent={pushEvent} />
             <FallbackOpenChannelForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} pushEvent={pushEvent} />
             <FallbackSendPaymentForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} setLoadingNodes={setLoadingNodes} pushEvent={pushEvent} />
           </div>
         )}
       </div>
+
+      {/* ── Bottom: Feed (always visible) ── */}
+      <div className="shrink-0 border-t border-border-subtle flex flex-col" style={{ height: "40%" }}>
+        <div className="shrink-0 px-3 py-1.5 flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Feed</span>
+          {events.length > 0 && <span className="text-[9px] font-mono text-text-muted">{events.length}</span>}
+        </div>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <EventsFeed events={events} />
+        </div>
+      </div>
     </aside>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// Events feed (improved)
+// Events feed
 // ═══════════════════════════════════════════════════════════
 
 const EVENT_STYLES: Record<string, { icon: string; color: string; bg: string; border: string }> = {
   discovery: { icon: "🔍", color: "text-accent", bg: "bg-accent/8", border: "border-l-accent/40" },
+  negotiate: { icon: "🤝", color: "text-accent", bg: "bg-accent/8", border: "border-l-accent/40" },
   channel_open: { icon: "⚡", color: "text-success", bg: "bg-success/8", border: "border-l-success/40" },
   payment: { icon: "💸", color: "text-warning", bg: "bg-warning/8", border: "border-l-warning/40" },
   channel_close: { icon: "✕", color: "text-danger", bg: "bg-danger/8", border: "border-l-danger/40" },
@@ -588,6 +722,41 @@ function relativeTime(ts: number): string {
   if (diff < 60) return `${diff}s`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   return `${Math.floor(diff / 3600)}h`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Trust panel (Discovery + Negotiations + Reputation + Receipts + Policies)
+// ═══════════════════════════════════════════════════════════
+
+function TrustPanel({ api, trustScores }: { api: ReturnType<typeof import("@/lib/api").createApi>; trustScores: Record<string, number> }) {
+  const [section, setSection] = useState<"discovery" | "negotiations" | "receipts" | "policies">("discovery");
+  const sections = ["discovery", "negotiations", "receipts", "policies"] as const;
+  const labels: Record<string, string> = { discovery: "Discover", negotiations: "Negotiate", receipts: "Receipts", policies: "Policy" };
+
+  return (
+    <div className="space-y-2 pt-1 border-t border-border-subtle">
+      <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Trust</h3>
+      {/* Sub-tab pill selector */}
+      <div className="flex rounded-md bg-surface-overlay/60 p-0.5">
+        {sections.map((s) => (
+          <button
+            key={s}
+            onClick={() => setSection(s)}
+            className={`flex-1 px-1 py-1 text-[9px] font-medium rounded transition-colors ${
+              section === s ? "bg-surface-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
+            }`}
+          >
+            {labels[s]}
+          </button>
+        ))}
+      </div>
+
+      {section === "discovery" && <DiscoveryPanel api={api} trustScores={trustScores} />}
+      {section === "negotiations" && <NegotiationTimeline api={api} />}
+      {section === "receipts" && <ReceiptChain api={api} />}
+      {section === "policies" && <PolicyEditor api={api} />}
+    </div>
+  );
 }
 
 function EventsFeed({ events }: { events: NetworkEvent[] }) {
@@ -614,18 +783,18 @@ function EventsFeed({ events }: { events: NetworkEvent[] }) {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className={`text-[11px] font-semibold ${style.color}`}>{evt.from}</span>
+                <span className={`text-[11px] font-semibold ${style.color} truncate`}>{evt.from}</span>
                 {evt.to && (
                   <>
-                    <span className="text-[9px] text-text-muted">→</span>
-                    <span className="text-[11px] font-medium text-text-secondary">{evt.to}</span>
+                    <span className="text-[9px] text-text-muted shrink-0">→</span>
+                    <span className="text-[11px] font-medium text-text-secondary truncate">{evt.to}</span>
                   </>
                 )}
                 <span className="ml-auto text-[8px] font-mono text-text-muted/60 tabular-nums shrink-0">
                   {relativeTime(evt.timestamp)}
                 </span>
               </div>
-              <p className="text-[10px] text-text-secondary/80 leading-snug mt-0.5">{evt.message}</p>
+              <p className="text-[10px] text-text-secondary/80 leading-snug mt-0.5 break-words">{evt.message}</p>
               {evt.meta && (
                 <p className="text-[8px] font-mono text-text-muted/50 mt-0.5 truncate">{evt.meta}</p>
               )}
@@ -638,7 +807,143 @@ function EventsFeed({ events }: { events: NetworkEvent[] }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Fallback sidebar forms (kept as backup)
+// Negotiate form
+// ═══════════════════════════════════════════════════════════
+
+function NegotiateForm({ onlineAgents, lbl, pushEvent }: {
+  onlineAgents: AgentState[];
+  lbl: (a: AgentState) => string;
+  pushEvent: (e: Omit<NetworkEvent, "id" | "timestamp">) => void;
+}) {
+  const [initiatorIdx, setInitiatorIdx] = useState("0");
+  const [responderIdx, setResponderIdx] = useState("");
+  const [serviceType, setServiceType] = useState("compute");
+  const [proposedPrice, setProposedPrice] = useState("100000");
+  const [channelDeposit, setChannelDeposit] = useState("5000000");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  if (onlineAgents.length < 2) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const initiator = onlineAgents[parseInt(initiatorIdx)];
+    const responder = onlineAgents[parseInt(responderIdx)];
+    if (!initiator || !responder || !responder.identity?.peer_id) {
+      setResult({ ok: false, msg: "Select two different agents" });
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await initiator.api.negotiate(
+        responder.identity.peer_id,
+        serviceType,
+        parseInt(proposedPrice),
+        parseInt(channelDeposit),
+      );
+      setResult({ ok: true, msg: `Proposed — ${res.negotiation.negotiation_id.slice(0, 8)}...` });
+      pushEvent({
+        type: "status",
+        from: lbl(initiator),
+        message: `Negotiation proposed to ${lbl(responder)}: ${serviceType} @ ${parseInt(proposedPrice).toLocaleString()} wei/call`,
+      });
+    } catch (err: unknown) {
+      setResult({ ok: false, msg: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-accent/20 bg-accent/[0.03] p-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-accent">Negotiate</h4>
+        <span className="text-[8px] font-bold uppercase px-1 py-0.5 rounded bg-accent/15 text-accent">P2P</span>
+      </div>
+      <p className="text-[9px] text-text-muted leading-relaxed">
+        Propose service terms between agents. The responder can accept, reject, or counter.
+      </p>
+
+      <form onSubmit={handleSubmit} className="space-y-2">
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="text-[9px] font-medium text-text-muted block mb-1">From</label>
+            <Select value={initiatorIdx} onValueChange={(v) => { setInitiatorIdx(v); setResponderIdx(""); }}>
+              <SelectTrigger className="h-7 text-[10px] bg-surface-overlay border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {onlineAgents.map((a, i) => <SelectItem key={i} value={String(i)} className="text-[10px]">{lbl(a)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <span className="text-accent pb-1 text-xs">~</span>
+          <div className="flex-1">
+            <label className="text-[9px] font-medium text-text-muted block mb-1">To</label>
+            <Select value={responderIdx} onValueChange={setResponderIdx}>
+              <SelectTrigger className="h-7 text-[10px] bg-surface-overlay border-border">
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent>
+                {onlineAgents.map((a, i) => {
+                  if (String(i) === initiatorIdx) return null;
+                  return <SelectItem key={i} value={String(i)} className="text-[10px]">{lbl(a)}</SelectItem>;
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[9px] font-medium text-text-muted block mb-1">Service Type</label>
+          <Select value={serviceType} onValueChange={setServiceType}>
+            <SelectTrigger className="h-7 text-[10px] bg-surface-overlay border-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="compute" className="text-[10px]">Compute</SelectItem>
+              <SelectItem value="storage" className="text-[10px]">Storage</SelectItem>
+              <SelectItem value="inference" className="text-[10px]">Inference</SelectItem>
+              <SelectItem value="relay" className="text-[10px]">Relay</SelectItem>
+              <SelectItem value="data" className="text-[10px]">Data</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[9px] font-medium text-text-muted block mb-1">Price/call (wei)</label>
+            <input value={proposedPrice} onChange={(e) => setProposedPrice(e.target.value)} placeholder="100000" required min="1" type="number" disabled={loading}
+              className="w-full h-7 bg-surface-overlay border border-border rounded-md px-2 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus-ring disabled:opacity-50" />
+          </div>
+          <div>
+            <label className="text-[9px] font-medium text-text-muted block mb-1">Deposit (wei)</label>
+            <input value={channelDeposit} onChange={(e) => setChannelDeposit(e.target.value)} placeholder="5000000" required min="1" type="number" disabled={loading}
+              className="w-full h-7 bg-surface-overlay border border-border rounded-md px-2 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus-ring disabled:opacity-50" />
+          </div>
+        </div>
+
+        {result && (
+          <div className={`text-[9px] px-2 py-1 rounded-md font-mono ${
+            result.ok ? "bg-success/10 text-success border border-success/20" : "bg-danger/10 text-danger border border-danger/20"
+          }`}>
+            {result.msg}
+          </div>
+        )}
+
+        <Button type="submit" disabled={loading || !responderIdx || initiatorIdx === responderIdx} size="sm"
+          className="w-full h-7 text-[10px] bg-accent/80 hover:bg-accent text-white font-semibold">
+          {loading ? "Proposing..." : "Propose Negotiation"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Fallback sidebar forms
 // ═══════════════════════════════════════════════════════════
 
 function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnimatingRoute, collectKnownChannels, pushEvent }: {
@@ -660,11 +965,9 @@ function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnima
 
   const sender = onlineAgents[parseInt(senderIdx)];
 
-  // Filter receivers to those the sender does NOT have a direct active channel to
   const potentialReceivers = onlineAgents.filter((a, i) => {
     if (String(i) === senderIdx) return false;
     if (!a.identity?.peer_id) return false;
-    // Include all other agents — route-pay works whether there's a direct channel or not
     return true;
   });
 
@@ -686,7 +989,6 @@ function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnima
     setLoadingNodes(ln);
 
     try {
-      // Find route first for animation
       try {
         const routeRes = await sender.api.findRoute(rPid, amountVal, knownChannels);
         const routeHops = [sPid!, ...routeRes.route.hops.map((h: { peer_id: string }) => h.peer_id)];
@@ -700,7 +1002,9 @@ function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnima
         sender.api.routePayment(rPid, amountVal, knownChannels),
         new Promise((r) => setTimeout(r, 2500)),
       ]);
-      setLoadingNodes([]); setAnimatingRoute(null);
+      setAnimatingRoute(null);
+      setLoadingNodes([sPid, rPid].filter(Boolean).map((pid) => ({ peerId: pid!, color: STATUS_COMPLETED })));
+      setTimeout(() => setLoadingNodes([]), 1200);
       const hops = res.payment.route.hop_count;
       setResult({ ok: true, msg: `Routed via ${hops} hop${hops > 1 ? "s" : ""}` });
       setAmount("");
@@ -712,7 +1016,9 @@ function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnima
       });
       sender.refresh(); receiver.refresh();
     } catch (err: unknown) {
-      setLoadingNodes([]); setAnimatingRoute(null);
+      setAnimatingRoute(null);
+      setLoadingNodes([sPid, rPid].filter(Boolean).map((pid) => ({ peerId: pid!, color: STATUS_FAILED })));
+      setTimeout(() => setLoadingNodes([]), 1200);
       setResult({ ok: false, msg: err instanceof Error ? err.message : "Failed" });
     } finally { setLoading(false); }
   };
@@ -892,13 +1198,15 @@ function FallbackSendPaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, p
         sender.api.sendPayment(channelId, parseInt(amount)),
         new Promise((r) => setTimeout(r, 1800)),
       ]);
-      setLoadingNodes([]);
+      setLoadingNodes([sPid, rPid].filter(Boolean).map((pid) => ({ peerId: pid!, color: STATUS_COMPLETED })));
+      setTimeout(() => setLoadingNodes([]), 1200);
       setResult({ ok: true, msg: `Nonce ${res.voucher.nonce} — ${res.voucher.amount.toLocaleString()} wei` });
       setAmount("");
       pushEvent({ type: "payment", from: lbl(sender), message: `Sent ${parseInt(amount).toLocaleString()} wei`, meta: `Nonce: ${res.voucher.nonce}` });
       sender.refresh();
     } catch (e: unknown) {
-      setLoadingNodes([]);
+      setLoadingNodes([sPid, rPid].filter(Boolean).map((pid) => ({ peerId: pid!, color: STATUS_FAILED })));
+      setTimeout(() => setLoadingNodes([]), 1200);
       setResult({ ok: false, msg: e instanceof Error ? e.message : "Failed" });
     } finally { setLoading(false); }
   };
@@ -1079,24 +1387,23 @@ function InteractionPopup({
 
 
 // ═══════════════════════════════════════════════════════════
-// Simulation Panel
+// Simulation Panel — uses only already-running agents
 // ═══════════════════════════════════════════════════════════
 
-type SimPhase = "idle" | "spawning" | "connecting" | "simulating" | "done";
+type SimPhase = "idle" | "connecting" | "simulating" | "done";
 type SimSpeed = "slow" | "normal" | "fast" | "turbo";
-const SPEED_CONFIG: Record<SimSpeed, { spawnDelay: number; channelDelay: number; payDelay: number; animateEvery: number; channelBatch: number; payBatch: number }> = {
-  slow:   { spawnDelay: 1500, channelDelay: 400, payDelay: 600,  animateEvery: 1,  channelBatch: 1, payBatch: 1  },
-  normal: { spawnDelay: 1000, channelDelay: 150, payDelay: 200,  animateEvery: 3,  channelBatch: 2, payBatch: 2  },
-  fast:   { spawnDelay: 800,  channelDelay: 50,  payDelay: 50,   animateEvery: 10, channelBatch: 4, payBatch: 5  },
-  turbo:  { spawnDelay: 600,  channelDelay: 0,   payDelay: 0,    animateEvery: 50, channelBatch: 8, payBatch: 10 },
+const SPEED_CONFIG: Record<SimSpeed, { channelDelay: number; payDelay: number; animateEvery: number; channelBatch: number; payBatch: number }> = {
+  slow:   { channelDelay: 400, payDelay: 600,  animateEvery: 1,  channelBatch: 1, payBatch: 1  },
+  normal: { channelDelay: 150, payDelay: 200,  animateEvery: 3,  channelBatch: 2, payBatch: 2  },
+  fast:   { channelDelay: 50,  payDelay: 50,   animateEvery: 10, channelBatch: 4, payBatch: 5  },
+  turbo:  { channelDelay: 0,   payDelay: 0,    animateEvery: 50, channelBatch: 8, payBatch: 10 },
 };
 
 function SimulationPanel({
-  manager, allAgents, onlineAgents, lbl, agentLabel,
+  allAgents, onlineAgents, lbl, agentLabel,
   setLoadingNodes, setAnimatingRoute, collectKnownChannels, pushEvent,
-  agentNames, setAgentNames, getAgents,
+  agentNames, setAgentNames, getAgents, manager,
 }: {
-  manager: ReturnType<typeof useAgentManager>;
   allAgents: AgentState[];
   onlineAgents: AgentState[];
   lbl: (a: AgentState) => string;
@@ -1108,8 +1415,8 @@ function SimulationPanel({
   agentNames: Map<number, string>;
   setAgentNames: React.Dispatch<React.SetStateAction<Map<number, string>>>;
   getAgents: () => AgentState[];
+  manager: ReturnType<typeof useAgentManager>;
 }) {
-  const [nodeCount, setNodeCount] = useState("4");
   const [deposit, setDeposit] = useState("5000000");
   const [paymentRounds, setPaymentRounds] = useState("10");
   const [minPay, setMinPay] = useState("10000");
@@ -1125,7 +1432,6 @@ function SimulationPanel({
   const sleep = (ms: number) => ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
   const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-  // Resolve multiaddr helper
   const resolveAddr = (agent: AgentState) => {
     const addrs = agent.identity?.addrs ?? [];
     const tcp = addrs.find((a) => a.includes("/tcp/") && !a.includes("/ws"));
@@ -1136,48 +1442,23 @@ function SimulationPanel({
 
   const runSimulation = async () => {
     cancelRef.current = false;
-    const count = parseInt(nodeCount);
     const dep = parseInt(deposit);
     const rounds = parseInt(paymentRounds);
     const lo = parseInt(minPay);
     const hi = parseInt(maxPay);
     const cfg = SPEED_CONFIG[speed];
 
-    if (isNaN(count) || count < 2 || count > 20) return;
     if (isNaN(dep) || dep < 1000) return;
     if (isNaN(rounds) || rounds < 1) return;
 
     setStats({ ok: 0, fail: 0, total: 0 });
 
-    // ── Phase 1: Spawn nodes ──
-    setPhase("spawning");
-    const needed = count - manager.agents.length;
-    if (needed > 0) {
-      for (let i = 0; i < needed; i++) {
-        if (cancelRef.current) { setPhase("idle"); return; }
-        setProgress(`Spawning ${i + 1}/${needed}`);
-        await manager.startAgent();
-        await sleep(cfg.spawnDelay);
-      }
-      setProgress("Waiting for nodes...");
-      // Poll until enough agents are online or timeout
-      const deadline = Date.now() + 15000;
-      while (getAgents().filter((a) => a.online).length < count && Date.now() < deadline) {
-        await manager.refresh();
-        await sleep(500);
-      }
-    }
-    const readyCount = getAgents().filter((a) => a.online && a.identity?.peer_id).length;
-    setProgress(`${Math.min(count, readyCount)} nodes ready`);
-
-    // ── Phase 2: Open channels ──
-    setPhase("connecting");
-    await manager.refresh();
-    await sleep(300);
-
-    // Use fresh agents from ref — onlineAgents may be stale in this closure
+    // Use already-running agents — no spawning
     let agents = getAgents().filter((a) => a.online && a.identity?.peer_id);
-    if (agents.length < 2) { setPhase("idle"); setProgress("Not enough agents"); return; }
+    if (agents.length < 2) { setPhase("idle"); setProgress("Need at least 2 online agents"); return; }
+
+    // ── Phase 1: Open channels ──
+    setPhase("connecting");
 
     // Build topology pairs
     const pairs: [number, number][] = [];
@@ -1229,12 +1510,11 @@ function SimulationPanel({
     // Refresh all agents and wait for state to propagate
     for (const a of agents) a.refresh();
     pushEvent({ type: "channel_open", from: "Sim", message: `Opened ${todo.length} channels (${topology})`, meta: `Deposit: ${dep.toLocaleString()} wei each` });
-    await sleep(1500); // Wait for WS/poll to deliver updated channel data
+    await sleep(1500);
 
-    // ── Phase 3: Run payments ──
+    // ── Phase 2: Run payments ──
     setPhase("simulating");
 
-    // Re-snapshot agents with fresh channel data
     agents = getAgents().filter((a) => a.online && a.identity?.peer_id);
     let knownChannels = collectKnownChannels();
     let okCount = 0, failCount = 0;
@@ -1243,7 +1523,6 @@ function SimulationPanel({
     for (let r = 0; r < rounds;) {
       if (cancelRef.current) { setPhase("idle"); return; }
 
-      // Periodically refresh known channels and agent state for routing
       if (r > 0 && r % refreshKnownEvery === 0) {
         for (const a of agents) a.refresh();
         await sleep(300);
@@ -1251,7 +1530,6 @@ function SimulationPanel({
         knownChannels = collectKnownChannels();
       }
 
-      // Build a batch of payments
       const batchSize = Math.min(cfg.payBatch, rounds - r);
       const batchPromises: Promise<boolean>[] = [];
 
@@ -1259,7 +1537,6 @@ function SimulationPanel({
         const amount = randInt(lo, hi);
         const ri = r + bi;
 
-        // Pick random sender with balance
         const eligible = agents.filter((a) =>
           a.channels.some((c) => c.state === "ACTIVE" && c.sender === a.identity?.eth_address && c.remaining_balance > amount)
         );
@@ -1275,7 +1552,6 @@ function SimulationPanel({
         );
         const useDirect = directChs.length > 0 && (Math.random() < 0.6 || agents.length <= 2);
 
-        // Animate only every Nth payment
         const shouldAnimate = ri % cfg.animateEvery === 0;
 
         if (useDirect) {
@@ -1318,7 +1594,6 @@ function SimulationPanel({
       setStats({ ok: okCount, fail: failCount, total: r });
       setProgress(`${r}/${rounds} — ${okCount} ok, ${failCount} fail`);
 
-      // Push event every 10th batch so the events panel shows progress
       if (r % (cfg.payBatch * 10) === 0 || r === rounds) {
         pushEvent({ type: "payment", from: "Sim", message: `Progress: ${okCount} ok / ${failCount} fail (${r}/${rounds})` });
       }
@@ -1326,9 +1601,11 @@ function SimulationPanel({
       if (cfg.payDelay > 0) await sleep(cfg.payDelay);
     }
 
-    setLoadingNodes([]);
     setAnimatingRoute(null);
-    // Refresh all agents once at the end
+    const allPids = agents.map((a) => a.identity?.peer_id).filter(Boolean) as string[];
+    const flashColor = okCount >= failCount ? STATUS_COMPLETED : STATUS_FAILED;
+    setLoadingNodes(allPids.map((pid) => ({ peerId: pid, color: flashColor })));
+    setTimeout(() => setLoadingNodes([]), 1200);
     for (const a of agents) a.refresh();
 
     setPhase("done");
@@ -1336,7 +1613,7 @@ function SimulationPanel({
     pushEvent({ type: "payment", from: "Sim", message: `Simulation: ${okCount} payments ok, ${failCount} failed out of ${rounds}` });
   };
 
-  const isRunning = phase === "spawning" || phase === "connecting" || phase === "simulating";
+  const isRunning = phase === "connecting" || phase === "simulating";
 
   return (
     <div className="rounded-lg border border-accent/20 bg-accent/[0.03] p-3 space-y-2.5">
@@ -1353,14 +1630,14 @@ function SimulationPanel({
       {/* Agent Naming */}
       <details open={editingNames} onToggle={(e) => setEditingNames((e.target as HTMLDetailsElement).open)}>
         <summary className="text-[9px] font-semibold uppercase tracking-widest text-text-muted cursor-pointer hover:text-text-secondary transition-colors">
-          Agent Names
+          Agent Names ({allAgents.length})
         </summary>
         <div className="mt-1.5 space-y-1">
           {allAgents.map((a, i) => {
             const port = manager.agents[i]?.apiPort ?? 8080 + i;
             return (
               <div key={i} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: NODE_NEUTRAL }} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: a.online ? NODE_NEUTRAL : "#3a3a4a" }} />
                 <input
                   className="flex-1 h-5 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring"
                   value={agentNames.get(port) ?? agentLabel(i)}
@@ -1371,18 +1648,13 @@ function SimulationPanel({
               </div>
             );
           })}
-          {allAgents.length === 0 && <p className="text-[9px] text-text-muted italic">No agents running</p>}
+          {allAgents.length === 0 && <p className="text-[9px] text-text-muted italic">No agents — start with ./scripts/dev.sh (5 agents default)</p>}
         </div>
       </details>
 
       {/* Controls */}
       <div className="space-y-3">
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <Label htmlFor="sim-nodes" className="text-[9px] text-text-muted mb-1 block">Nodes</Label>
-            <Input id="sim-nodes" value={nodeCount} onChange={(e) => setNodeCount(e.target.value)} type="number" min="2" max="20" disabled={isRunning}
-              className="h-7 text-[11px] font-mono bg-surface-overlay border-border" />
-          </div>
+        <div className="grid grid-cols-2 gap-2">
           <div>
             <Label htmlFor="sim-topo" className="text-[9px] text-text-muted mb-1 block">Topology</Label>
             <Select value={topology} onValueChange={(v) => setTopology(v as typeof topology)} disabled={isRunning}>
@@ -1472,12 +1744,11 @@ function SimulationPanel({
 
       {/* Action buttons */}
       <div className="flex gap-2">
-        <Button onClick={runSimulation} disabled={isRunning} size="sm"
+        <Button onClick={runSimulation} disabled={isRunning || onlineAgents.length < 2} size="sm"
           className="flex-1 h-8 text-[11px] bg-accent/90 hover:bg-accent text-white font-semibold">
-          {phase === "spawning" ? "Spawning..." :
-           phase === "connecting" ? "Connecting..." :
+          {phase === "connecting" ? "Connecting..." :
            phase === "simulating" ? "Running..." :
-           phase === "done" ? "Run Again" : "Run Simulation"}
+           phase === "done" ? "Run Again" : `Run (${onlineAgents.length} nodes)`}
         </Button>
         {isRunning && (
           <Button onClick={() => { cancelRef.current = true; }} variant="outline" size="sm"

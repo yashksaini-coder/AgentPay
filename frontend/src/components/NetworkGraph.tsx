@@ -68,12 +68,14 @@ export default function NetworkGraph({
   animatingRoute,
   onInteraction,
   agentLabels,
+  trustScores = {},
 }: {
   agents: AgentState[];
   loadingNodes?: LoadingNode[];
   animatingRoute?: AnimatingRoute | null;
   onInteraction?: (interaction: GraphInteraction) => void;
   agentLabels?: (i: number) => string;
+  trustScores?: Record<string, number>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<{ d3Force: (name: string, force?: unknown) => unknown } | null>(null);
@@ -83,6 +85,8 @@ export default function NetworkGraph({
   const loadingNodeSetRef = useRef(new Set<string>());
   const animatingRouteRef = useRef(animatingRoute);
   animatingRouteRef.current = animatingRoute;
+  const trustScoresRef = useRef(trustScores);
+  trustScoresRef.current = trustScores;
 
   // Track container dimensions for responsive sizing
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 600 });
@@ -194,13 +198,30 @@ export default function NetworkGraph({
     const d3Force = fg.d3Force as (name: string, force?: any) => any;
     const link = d3Force("link");
     if (link) {
-      link.distance((l: GraphLink) => l.type === "channel" ? 120 : 90);
+      link.distance((l: GraphLink) => l.type === "channel" ? 90 : 70);
       link.strength(0.5);
     }
     const charge = d3Force("charge");
     if (charge) {
-      charge.strength((d: GraphNode) => d.type === "agent" ? -300 : -40);
+      charge.strength((d: GraphNode) => d.type === "agent" ? -200 : -30);
     }
+  }, [graphData]);
+
+  // Zoom out once on initial load — never auto-zoom after that
+  const hasZoomedRef = useRef(false);
+  useEffect(() => {
+    if (hasZoomedRef.current) return;
+    const fg = fgRef.current;
+    if (!fg || graphData.nodes.length === 0) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fgAny = fg as any;
+    const timer = setTimeout(() => {
+      if (typeof fgAny.zoom === "function") {
+        fgAny.zoom(0.5, 400);
+      }
+      hasZoomedRef.current = true;
+    }, 800);
+    return () => clearTimeout(timer);
   }, [graphData]);
 
   // ── Custom Canvas node renderer ───────────────────────
@@ -265,7 +286,12 @@ export default function NetworkGraph({
     // Main circle
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 2 * Math.PI);
-    ctx.fillStyle = node.online ? NODE_COLOR : NODE_COLOR_OFFLINE;
+    // Color by trust score if available (green=high, amber=mid, red=low)
+    const ts = node.peerId ? trustScoresRef.current[node.peerId] : undefined;
+    const baseColor = !node.online ? NODE_COLOR_OFFLINE
+      : ts !== undefined ? (ts >= 0.7 ? "#34d399" : ts >= 0.4 ? "#fbbf24" : "#f87171")
+      : NODE_COLOR;
+    ctx.fillStyle = baseColor;
     ctx.globalAlpha = node.online ? 0.85 : 0.3;
     ctx.fill();
     ctx.globalAlpha = 1;

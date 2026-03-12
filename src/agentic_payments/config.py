@@ -93,6 +93,48 @@ class APIConfig(BaseSettings):
     port: int = Field(default=8080, ge=1, le=65535, description="API listen port")
 
 
+class DiscoveryConfig(BaseSettings):
+    """Agent discovery configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="DISCOVERY_")
+
+    capabilities: list[dict] = Field(
+        default_factory=list,
+        description="List of capabilities: [{service_type, price_per_call, description}]",
+    )
+    advertisement_interval: int = Field(
+        default=60, ge=10,
+        description="How often to re-broadcast capabilities (seconds)",
+    )
+    stale_threshold: int = Field(
+        default=300, ge=30,
+        description="Remove agents not seen for this many seconds",
+    )
+
+
+class PolicyConfig(BaseSettings):
+    """Wallet policy configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="POLICY_")
+
+    max_spend_per_tx: int = Field(default=0, ge=0, description="Max wei per transaction (0=unlimited)")
+    max_total_spend: int = Field(default=0, ge=0, description="Max total wei spend (0=unlimited)")
+    rate_limit_per_min: int = Field(default=0, ge=0, description="Max payments per minute (0=unlimited)")
+    peer_whitelist: list[str] = Field(default_factory=list, description="Allowed peer IDs")
+    peer_blacklist: list[str] = Field(default_factory=list, description="Blocked peer IDs")
+
+
+class GatewayConfig(BaseSettings):
+    """x402 Resource Gateway configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="GATEWAY_")
+
+    resources: list[dict] = Field(
+        default_factory=list,
+        description="List of gated resources: [{path, price, description, payment_type}]",
+    )
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -103,6 +145,9 @@ class Settings(BaseSettings):
     ethereum: EthereumConfig = Field(default_factory=EthereumConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     api: APIConfig = Field(default_factory=APIConfig)
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
+    policy: PolicyConfig = Field(default_factory=PolicyConfig)
+    gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO", description="Log level"
     )

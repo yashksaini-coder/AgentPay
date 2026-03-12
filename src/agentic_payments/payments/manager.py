@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 import trio
@@ -11,6 +11,9 @@ import trio
 from agentic_payments.payments.channel import ChannelError, ChannelState, PaymentChannel
 from agentic_payments.payments.voucher import SignedVoucher
 from agentic_payments.protocol.messages import PaymentClose, PaymentOpen, PaymentUpdate
+
+if TYPE_CHECKING:
+    from agentic_payments.policies.engine import PolicyEngine
 
 logger = structlog.get_logger(__name__)
 
@@ -21,10 +24,11 @@ MAX_TIMESTAMP_SKEW = 300
 class ChannelManager:
     """Manages all payment channels for this node."""
 
-    def __init__(self, local_address: str) -> None:
+    def __init__(self, local_address: str, policy_engine: PolicyEngine | None = None) -> None:
         self.local_address = local_address
         self.channels: dict[bytes, PaymentChannel] = {}
         self._channel_locks: dict[bytes, trio.Lock] = {}
+        self.policy_engine = policy_engine
 
     def get_channel(self, channel_id: bytes) -> PaymentChannel:
         """Get a channel by ID."""
@@ -188,6 +192,10 @@ class ChannelManager:
                     f"(total_paid={channel.total_paid}, payment={amount})"
                 )
 
+            # Policy check before creating voucher
+            if self.policy_engine is not None:
+                self.policy_engine.check_payment(amount, channel.peer_id)
+
             voucher = SignedVoucher.create(
                 channel_id=channel_id,
                 nonce=new_nonce,
@@ -208,5 +216,9 @@ class ChannelManager:
 
             # Commit locally only after successful send
             channel.apply_voucher(voucher)
+
+            # Record payment for policy tracking
+            if self.policy_engine is not None:
+                self.policy_engine.record_payment(amount)
 
             return voucher

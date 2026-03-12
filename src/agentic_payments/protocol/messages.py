@@ -20,6 +20,10 @@ class MessageType(IntEnum):
     HTLC_FULFILL = 6
     HTLC_CANCEL = 7
     CHANNEL_ANNOUNCE = 8
+    NEGOTIATE_PROPOSE = 9
+    NEGOTIATE_COUNTER = 10
+    NEGOTIATE_ACCEPT = 11
+    NEGOTIATE_REJECT = 12
     ERROR = 15
 
 
@@ -130,6 +134,44 @@ class ChannelAnnounce:
 
 
 @dataclass
+class NegotiatePropose:
+    """Propose a service negotiation."""
+
+    negotiation_id: str
+    service_type: str
+    proposed_price: int
+    channel_deposit: int
+    timeout: int  # absolute unix timestamp
+    timestamp: int = field(default_factory=lambda: int(time.time()))
+
+
+@dataclass
+class NegotiateCounter:
+    """Counter-offer in a negotiation."""
+
+    negotiation_id: str
+    counter_price: int
+    timestamp: int = field(default_factory=lambda: int(time.time()))
+
+
+@dataclass
+class NegotiateAccept:
+    """Accept negotiation terms."""
+
+    negotiation_id: str
+    timestamp: int = field(default_factory=lambda: int(time.time()))
+
+
+@dataclass
+class NegotiateReject:
+    """Reject a negotiation."""
+
+    negotiation_id: str
+    reason: str = ""
+    timestamp: int = field(default_factory=lambda: int(time.time()))
+
+
+@dataclass
 class ErrorMessage:
     """Protocol error."""
 
@@ -178,6 +220,13 @@ _EXPECTED_FIELDS: dict[MessageType, set[str]] = {
     MessageType.CHANNEL_ANNOUNCE: {
         "channel_id", "peer_a", "peer_b", "capacity", "timestamp",
     },
+    MessageType.NEGOTIATE_PROPOSE: {
+        "negotiation_id", "service_type", "proposed_price",
+        "channel_deposit", "timeout", "timestamp",
+    },
+    MessageType.NEGOTIATE_COUNTER: {"negotiation_id", "counter_price", "timestamp"},
+    MessageType.NEGOTIATE_ACCEPT: {"negotiation_id", "timestamp"},
+    MessageType.NEGOTIATE_REJECT: {"negotiation_id", "reason", "timestamp"},
     MessageType.ERROR: {"code", "message"},
 }
 
@@ -269,6 +318,30 @@ def _validate_wire_data(msg_type: MessageType, data: dict[str, Any]) -> dict[str
         if not isinstance(filtered["capacity"], int) or filtered["capacity"] <= 0:
             raise ValueError("capacity must be a positive integer")
 
+    elif msg_type == MessageType.NEGOTIATE_PROPOSE:
+        for req in ("negotiation_id", "service_type", "proposed_price", "channel_deposit", "timeout"):
+            if req not in filtered:
+                raise ValueError(f"Missing required field: {req}")
+        if not isinstance(filtered["proposed_price"], int) or filtered["proposed_price"] <= 0:
+            raise ValueError("proposed_price must be a positive integer")
+        if not isinstance(filtered["channel_deposit"], int) or filtered["channel_deposit"] <= 0:
+            raise ValueError("channel_deposit must be a positive integer")
+
+    elif msg_type == MessageType.NEGOTIATE_COUNTER:
+        for req in ("negotiation_id", "counter_price"):
+            if req not in filtered:
+                raise ValueError(f"Missing required field: {req}")
+        if not isinstance(filtered["counter_price"], int) or filtered["counter_price"] <= 0:
+            raise ValueError("counter_price must be a positive integer")
+
+    elif msg_type == MessageType.NEGOTIATE_ACCEPT:
+        if "negotiation_id" not in filtered:
+            raise ValueError("Missing required field: negotiation_id")
+
+    elif msg_type == MessageType.NEGOTIATE_REJECT:
+        if "negotiation_id" not in filtered:
+            raise ValueError("Missing required field: negotiation_id")
+
     return filtered
 
 
@@ -309,6 +382,14 @@ def from_wire(raw: dict[str, Any]) -> tuple[MessageType, Any]:
             return msg_type, HtlcCancel(**validated)
         case MessageType.CHANNEL_ANNOUNCE:
             return msg_type, ChannelAnnounce(**validated)
+        case MessageType.NEGOTIATE_PROPOSE:
+            return msg_type, NegotiatePropose(**validated)
+        case MessageType.NEGOTIATE_COUNTER:
+            return msg_type, NegotiateCounter(**validated)
+        case MessageType.NEGOTIATE_ACCEPT:
+            return msg_type, NegotiateAccept(**validated)
+        case MessageType.NEGOTIATE_REJECT:
+            return msg_type, NegotiateReject(**validated)
         case MessageType.ERROR:
             return msg_type, ErrorMessage(**validated)
         case _:

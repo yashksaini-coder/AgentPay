@@ -47,6 +47,10 @@ class PaymentProtocolHandler:
         on_htlc_fulfill: Any = None,
         on_htlc_cancel: Any = None,
         on_channel_opened: Any = None,
+        on_negotiate_propose: Any = None,
+        on_negotiate_counter: Any = None,
+        on_negotiate_accept: Any = None,
+        on_negotiate_reject: Any = None,
     ) -> None:
         self.channel_manager = channel_manager
         self.htlc_manager = htlc_manager
@@ -56,6 +60,11 @@ class PaymentProtocolHandler:
         self._on_htlc_cancel = on_htlc_cancel
         # Callback when a channel is accepted (receiver side)
         self._on_channel_opened = on_channel_opened
+        # Callbacks for negotiation events
+        self._on_negotiate_propose = on_negotiate_propose
+        self._on_negotiate_counter = on_negotiate_counter
+        self._on_negotiate_accept = on_negotiate_accept
+        self._on_negotiate_reject = on_negotiate_reject
 
     async def handle_stream(self, stream: NetStream) -> None:
         """Handle an incoming libp2p stream for the payment protocol.
@@ -125,6 +134,14 @@ class PaymentProtocolHandler:
                 return await self._handle_htlc_fulfill(msg, remote_peer)
             case MessageType.HTLC_CANCEL:
                 return await self._handle_htlc_cancel(msg, remote_peer)
+            case MessageType.NEGOTIATE_PROPOSE:
+                return await self._handle_negotiate(self._on_negotiate_propose, msg, remote_peer)
+            case MessageType.NEGOTIATE_COUNTER:
+                return await self._handle_negotiate(self._on_negotiate_counter, msg, remote_peer)
+            case MessageType.NEGOTIATE_ACCEPT:
+                return await self._handle_negotiate(self._on_negotiate_accept, msg, remote_peer)
+            case MessageType.NEGOTIATE_REJECT:
+                return await self._handle_negotiate(self._on_negotiate_reject, msg, remote_peer)
             case _:
                 return MessageType.ERROR, ErrorMessage(
                     code=1, message=f"Unsupported message type: {msg_type}"
@@ -256,3 +273,19 @@ class PaymentProtocolHandler:
         except Exception:
             logger.exception("htlc_cancel_error", remote_peer=remote_peer)
             return None
+
+    async def _handle_negotiate(
+        self, callback: Any, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle a negotiation message via callback."""
+        if callback is None:
+            return MessageType.ERROR, ErrorMessage(
+                code=3, message="Negotiation not supported"
+            )
+        try:
+            return await callback(msg, remote_peer)
+        except Exception:
+            logger.exception("negotiate_handler_error", remote_peer=remote_peer)
+            return MessageType.ERROR, ErrorMessage(
+                code=4, message="Negotiation handler error"
+            )

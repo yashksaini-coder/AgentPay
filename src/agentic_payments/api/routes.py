@@ -9,7 +9,9 @@ import structlog
 from quart import request, websocket
 from quart_trio import QuartTrio
 
+from agentic_payments.gateway.x402 import GatedResource
 from agentic_payments.payments.channel import ChannelError
+from agentic_payments.policies.engine import WalletPolicy
 
 logger = structlog.get_logger(__name__)
 
@@ -105,6 +107,15 @@ def register_routes(app: QuartTrio) -> None:
                 },
                 "peers": {"peers": peers, "count": len(peers), "connected": connected},
                 "channels": {"channels": ch_list, "count": len(ch_list)},
+                "reputation": {
+                    "peers": [r.to_dict() for r in node.reputation_tracker.get_all()],
+                } if hasattr(node, "reputation_tracker") else {},
+                "discovery": {
+                    "agents": [a.to_dict() for a in node.capability_registry.search()],
+                } if hasattr(node, "capability_registry") else {},
+                "negotiations": {
+                    "active": [n.to_dict() for n in node.negotiation_manager.list_active()],
+                } if hasattr(node, "negotiation_manager") else {},
             }
 
         prev_hash = ""
@@ -436,3 +447,265 @@ def register_routes(app: QuartTrio) -> None:
             logger.exception("api_route_pay_error")
             _log_api("/route-pay", 500, ms, method="POST", error=str(e)[:60])
             return {"error": str(e)}, 500
+
+    # ── Discovery endpoints ─────────────────────────────────────
+
+    @app.route("/discovery/agents")
+    async def discovery_agents() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        capability = request.args.get("capability")
+        agents = node.capability_registry.search(capability)
+        result = {
+            "agents": [a.to_dict() for a in agents],
+            "count": len(agents),
+        }
+        _log_api("/discovery/agents", 200, (time.monotonic() - t0) * 1000, detail=f"{len(agents)} agents")
+        return result
+
+    @app.route("/discovery/resources")
+    async def discovery_resources() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        bazaar = node.capability_registry.to_bazaar_format()
+        _log_api("/discovery/resources", 200, (time.monotonic() - t0) * 1000, detail=f"{len(bazaar)} providers")
+        return {"providers": bazaar, "count": len(bazaar)}
+
+    # ── Negotiation endpoints ───────────────────────────────────
+
+    @app.route("/negotiate", methods=["POST"])
+    async def negotiate() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+
+        peer_id = data.get("peer_id")
+        service_type = data.get("service_type")
+        proposed_price = data.get("proposed_price")
+        channel_deposit = data.get("channel_deposit")
+
+        if not peer_id:
+            return {"error": "peer_id is required"}, 400
+        if not service_type:
+            return {"error": "service_type is required"}, 400
+        if proposed_price is None:
+            return {"error": "proposed_price is required"}, 400
+        if channel_deposit is None:
+            return {"error": "channel_deposit is required"}, 400
+
+        try:
+            result = await node.negotiate(
+                peer_id=peer_id,
+                service_type=service_type,
+                proposed_price=int(proposed_price),
+                channel_deposit=int(channel_deposit),
+            )
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/negotiate", 201, ms, method="POST", detail=f"id={result['negotiation_id'][:12]}")
+            return {"negotiation": result}, 201
+        except Exception as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/negotiate", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    @app.route("/negotiations")
+    async def list_negotiations() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        negs = node.negotiation_manager.list_all()
+        result = {"negotiations": [n.to_dict() for n in negs], "count": len(negs)}
+        _log_api("/negotiations", 200, (time.monotonic() - t0) * 1000, detail=f"{len(negs)} negotiations")
+        return result
+
+    @app.route("/negotiations/<negotiation_id>")
+    async def get_negotiation(negotiation_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        try:
+            neg = node.negotiation_manager.get(negotiation_id)
+            _log_api(f"/negotiations/{negotiation_id[:8]}", 200, (time.monotonic() - t0) * 1000)
+            return {"negotiation": neg.to_dict()}, 200
+        except KeyError:
+            _log_api(f"/negotiations/{negotiation_id[:8]}", 404, (time.monotonic() - t0) * 1000, error="not found")
+            return {"error": "Negotiation not found"}, 404
+
+    @app.route("/negotiations/<negotiation_id>/counter", methods=["POST"])
+    async def counter_negotiation(negotiation_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        counter_price = data.get("counter_price")
+        if counter_price is None:
+            return {"error": "counter_price is required"}, 400
+        try:
+            by = node.peer_id.to_base58() if node.peer_id else ""
+            neg = node.negotiation_manager.counter(negotiation_id, by, int(counter_price))
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/negotiations/{negotiation_id[:8]}/counter", 200, ms, method="POST")
+            return {"negotiation": neg.to_dict()}, 200
+        except (KeyError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/negotiations/{negotiation_id[:8]}/counter", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    @app.route("/negotiations/<negotiation_id>/accept", methods=["POST"])
+    async def accept_negotiation(negotiation_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        try:
+            by = node.peer_id.to_base58() if node.peer_id else ""
+            neg = node.negotiation_manager.accept(negotiation_id, by)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/negotiations/{negotiation_id[:8]}/accept", 200, ms, method="POST")
+            return {"negotiation": neg.to_dict()}, 200
+        except (KeyError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/negotiations/{negotiation_id[:8]}/accept", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    @app.route("/negotiations/<negotiation_id>/reject", methods=["POST"])
+    async def reject_negotiation(negotiation_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        try:
+            by = node.peer_id.to_base58() if node.peer_id else ""
+            neg = node.negotiation_manager.reject(negotiation_id, by)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/negotiations/{negotiation_id[:8]}/reject", 200, ms, method="POST")
+            return {"negotiation": neg.to_dict()}, 200
+        except (KeyError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/negotiations/{negotiation_id[:8]}/reject", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    # ── Policy endpoints ────────────────────────────────────────
+
+    @app.route("/policies")
+    async def get_policies() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        result = node.policy_engine.get_stats()
+        _log_api("/policies", 200, (time.monotonic() - t0) * 1000)
+        return result
+
+    @app.route("/policies", methods=["PUT"])
+    async def update_policies() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        try:
+            policy = WalletPolicy.from_dict(data)
+            node.policy_engine.update_policy(policy)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/policies", 200, ms, method="PUT")
+            return {"policy": policy.to_dict()}, 200
+        except Exception as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/policies", 400, ms, method="PUT", error=str(e))
+            return {"error": str(e)}, 400
+
+    # ── Reputation endpoints ────────────────────────────────────
+
+    @app.route("/reputation")
+    async def get_all_reputation() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        reps = node.reputation_tracker.get_all()
+        result = {"peers": [r.to_dict() for r in reps], "count": len(reps)}
+        _log_api("/reputation", 200, (time.monotonic() - t0) * 1000, detail=f"{len(reps)} peers")
+        return result
+
+    @app.route("/reputation/<peer_id>")
+    async def get_peer_reputation(peer_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        rep = node.reputation_tracker.get_reputation(peer_id)
+        if rep is None:
+            _log_api(f"/reputation/{peer_id[:12]}", 404, (time.monotonic() - t0) * 1000, error="not found")
+            return {"error": "No reputation data for peer"}, 404
+        _log_api(f"/reputation/{peer_id[:12]}", 200, (time.monotonic() - t0) * 1000)
+        return {"reputation": rep.to_dict()}, 200
+
+    # ── Receipt endpoints ───────────────────────────────────────
+
+    @app.route("/receipts")
+    async def list_receipts() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        channels = node.receipt_store.list_channels()
+        result = {
+            "channels": [
+                {
+                    "channel_id": cid.hex(),
+                    "receipt_count": len(node.receipt_store.get_chain(cid)),
+                    "chain_valid": node.receipt_store.verify_chain(cid),
+                }
+                for cid in channels
+            ],
+            "count": len(channels),
+        }
+        _log_api("/receipts", 200, (time.monotonic() - t0) * 1000, detail=f"{len(channels)} channels")
+        return result
+
+    @app.route("/receipts/<channel_id>")
+    async def get_receipts(channel_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        try:
+            cid = bytes.fromhex(channel_id)
+        except ValueError:
+            return {"error": "Invalid channel ID hex"}, 400
+        chain = node.receipt_store.get_chain(cid)
+        result = {
+            "channel_id": channel_id,
+            "receipts": [r.to_dict() for r in chain],
+            "count": len(chain),
+            "chain_valid": node.receipt_store.verify_chain(cid),
+        }
+        _log_api(f"/receipts/{channel_id[:8]}", 200, (time.monotonic() - t0) * 1000, detail=f"{len(chain)} receipts")
+        return result, 200
+
+    # ── Gateway endpoints ───────────────────────────────────────
+
+    @app.route("/gateway/resources")
+    async def gateway_resources() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        bazaar = node.gateway.to_bazaar_format()
+        _log_api("/gateway/resources", 200, (time.monotonic() - t0) * 1000)
+        return bazaar
+
+    @app.route("/gateway/register", methods=["POST"])
+    async def gateway_register() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        path = data.get("path")
+        price = data.get("price")
+        if not path:
+            return {"error": "path is required"}, 400
+        if price is None:
+            return {"error": "price is required"}, 400
+        try:
+            resource = GatedResource(
+                path=path,
+                price=int(price),
+                description=data.get("description", ""),
+                payment_type=data.get("payment_type", "payment-channel"),
+            )
+            node.gateway.register_resource(resource)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/gateway/register", 201, ms, method="POST", detail=path)
+            return {"resource": resource.to_dict()}, 201
+        except Exception as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/gateway/register", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400

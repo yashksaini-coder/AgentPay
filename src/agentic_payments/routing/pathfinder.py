@@ -1,13 +1,15 @@
 """BFS pathfinder for multi-hop payment routes.
 
 Finds the shortest path through the network graph that has sufficient
-capacity at every hop to forward the payment amount.
+capacity at every hop to forward the payment amount. Optionally uses
+reputation scores to prefer higher-trust peers.
 """
 
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from typing import Callable
 
 from agentic_payments.routing.graph import ChannelEdge, NetworkGraph
 
@@ -61,10 +63,12 @@ def find_route(
     amount: int,
     base_timeout: int,
     max_hops: int = 10,
+    reputation_fn: Callable[[str], float] | None = None,
 ) -> Route | None:
     """Find a route from source to destination using BFS.
 
     Returns the shortest path where every channel has >= `amount` capacity.
+    When reputation_fn is provided, uses weighted BFS to prefer higher-trust peers.
     Returns None if no route exists.
 
     Args:
@@ -74,9 +78,15 @@ def find_route(
         amount: Payment amount in wei
         base_timeout: Starting HTLC timeout (absolute unix timestamp)
         max_hops: Maximum number of hops allowed
+        reputation_fn: Optional callable(peer_id) -> trust_score [0..1]
     """
     if source == destination:
         return None
+
+    if reputation_fn is not None:
+        return _find_route_weighted(
+            graph, source, destination, amount, base_timeout, max_hops, reputation_fn
+        )
 
     # BFS: queue of (current_peer, path_so_far)
     queue: deque[tuple[str, list[tuple[str, ChannelEdge]]]] = deque()
@@ -104,6 +114,56 @@ def find_route(
 
             visited.add(neighbor)
             queue.append((neighbor, new_path))
+
+    return None
+
+
+def _find_route_weighted(
+    graph: NetworkGraph,
+    source: str,
+    destination: str,
+    amount: int,
+    base_timeout: int,
+    max_hops: int,
+    reputation_fn: Callable[[str], float],
+) -> Route | None:
+    """Weighted BFS that prefers higher-trust peers.
+
+    Uses (1 - trust_score) as edge cost; explores lowest-cost paths first.
+    """
+    import heapq
+
+    # (cost, counter, current_peer, path_so_far)
+    counter = 0
+    heap: list[tuple[float, int, str, list[tuple[str, ChannelEdge]]]] = [
+        (0.0, counter, source, [])
+    ]
+    best_cost: dict[str, float] = {source: 0.0}
+
+    while heap:
+        cost, _, current, path = heapq.heappop(heap)
+
+        if len(path) >= max_hops:
+            continue
+
+        if current == destination:
+            return _build_route(path, amount, base_timeout)
+
+        for neighbor, edge in graph.get_neighbors(current):
+            if edge.available_capacity < amount:
+                continue
+
+            trust = reputation_fn(neighbor)
+            edge_cost = 1.0 - trust  # lower cost = higher trust
+            new_cost = cost + edge_cost
+
+            if neighbor in best_cost and best_cost[neighbor] <= new_cost:
+                continue
+
+            best_cost[neighbor] = new_cost
+            new_path = path + [(neighbor, edge)]
+            counter += 1
+            heapq.heappush(heap, (new_cost, counter, neighbor, new_path))
 
     return None
 

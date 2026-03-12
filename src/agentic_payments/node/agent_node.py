@@ -20,23 +20,36 @@ from multiaddr import Multiaddr
 
 from agentic_payments.chain.wallet import Wallet
 from agentic_payments.config import Settings
+from agentic_payments.discovery.models import AgentAdvertisement, AgentCapability
+from agentic_payments.discovery.registry import CapabilityRegistry
+from agentic_payments.gateway.x402 import GatedResource, X402Gateway
+from agentic_payments.negotiation.manager import NegotiationManager
 from agentic_payments.node.discovery import PeerDiscovery
 from agentic_payments.node.identity import load_or_generate_identity, peer_id_from_keypair
 from agentic_payments.payments.channel import PaymentChannel
 from agentic_payments.payments.manager import ChannelManager
 from agentic_payments.payments.voucher import SignedVoucher
+from agentic_payments.policies.engine import PolicyEngine, WalletPolicy
 from agentic_payments.protocol.codec import read_message, write_message
 from agentic_payments.protocol.handler import PROTOCOL_ID, PaymentProtocolHandler
 from agentic_payments.protocol.messages import (
     HtlcPropose,
     MessageType,
+    PaymentAck,
     PaymentClose,
     PaymentOpen,
     from_wire,
     to_wire,
 )
 from agentic_payments.pubsub.broadcaster import PubsubBroadcaster
-from agentic_payments.pubsub.topics import TOPIC_AGENT_DISCOVERY, TOPIC_CHANNEL_ANNOUNCEMENTS
+from agentic_payments.pubsub.topics import (
+    TOPIC_AGENT_CAPABILITIES,
+    TOPIC_AGENT_DISCOVERY,
+    TOPIC_CHANNEL_ANNOUNCEMENTS,
+    TOPIC_PAYMENT_RECEIPTS,
+)
+from agentic_payments.reporting.receipts import ReceiptStore, SignedReceipt
+from agentic_payments.reputation.tracker import ReputationTracker
 from agentic_payments.routing.graph import NetworkGraph
 from agentic_payments.routing.htlc import (
     HtlcManager,
@@ -87,6 +100,24 @@ class AgentNode:
         # Preimages we generated (for payments we initiated)
         self._preimages: dict[bytes, bytes] = {}  # payment_hash -> preimage
 
+        # --- New subsystems ---
+        self.capability_registry: CapabilityRegistry = CapabilityRegistry(
+            stale_threshold=config.discovery.stale_threshold
+        )
+        self.negotiation_manager: NegotiationManager = NegotiationManager()
+        self.policy_engine: PolicyEngine = PolicyEngine(
+            WalletPolicy(
+                max_spend_per_tx=config.policy.max_spend_per_tx,
+                max_total_spend=config.policy.max_total_spend,
+                rate_limit_per_min=config.policy.rate_limit_per_min,
+                peer_whitelist=config.policy.peer_whitelist,
+                peer_blacklist=config.policy.peer_blacklist,
+            )
+        )
+        self.reputation_tracker: ReputationTracker = ReputationTracker()
+        self.receipt_store: ReceiptStore = ReceiptStore()
+        self.gateway: X402Gateway = X402Gateway()
+
     def _require_started(self) -> None:
         """Guard: ensure the node has been started."""
         if self.host is None or self.wallet is None or self.channel_manager is None:
@@ -110,7 +141,9 @@ class AgentNode:
 
         # --- Ethereum wallet ---
         self.wallet = Wallet.generate()
-        self.channel_manager = ChannelManager(self.wallet.address)
+        self.channel_manager = ChannelManager(
+            self.wallet.address, policy_engine=self.policy_engine
+        )
         self.protocol_handler = PaymentProtocolHandler(
             channel_manager=self.channel_manager,
             htlc_manager=self.htlc_manager,
@@ -118,7 +151,17 @@ class AgentNode:
             on_htlc_fulfill=self._on_htlc_fulfill,
             on_htlc_cancel=self._on_htlc_cancel,
             on_channel_opened=self._on_channel_accepted,
+            on_negotiate_propose=self._on_negotiate_propose,
+            on_negotiate_counter=self._on_negotiate_counter,
+            on_negotiate_accept=self._on_negotiate_accept,
+            on_negotiate_reject=self._on_negotiate_reject,
         )
+
+        # --- Configure gateway ---
+        self.gateway.provider_id = self.peer_id.to_base58()
+        self.gateway.wallet_address = self.wallet.address
+        for r in self.config.gateway.resources:
+            self.gateway.register_resource(GatedResource.from_dict(r))
 
         # --- libp2p host ---
         self.host = new_host(
@@ -200,11 +243,18 @@ class AgentNode:
                     },
                 )
 
-                # Register channel announcement handler for routing
+                # Register handlers for pubsub topics
                 self.broadcaster.on_message(
                     TOPIC_CHANNEL_ANNOUNCEMENTS,
                     self._handle_channel_announce,
                 )
+                self.broadcaster.on_message(
+                    TOPIC_AGENT_CAPABILITIES,
+                    self._handle_capability_announce,
+                )
+
+                # Publish our own capabilities
+                await self._broadcast_capabilities()
 
                 # Sync existing local channels into the routing graph
                 self._sync_graph_from_channels()
@@ -319,6 +369,9 @@ class AgentNode:
         Cleans up channel on failure.
         """
         self._require_started()
+        # Policy check
+        self.policy_engine.check_channel_open(deposit, peer_id)
+
         msg = PaymentOpen.new(
             sender=self.wallet.address,
             receiver=receiver,
@@ -398,13 +451,39 @@ class AgentNode:
 
                 return voucher
 
+        t0 = time.time()
         try:
-            return await _attempt_pay()
+            voucher = await _attempt_pay()
         except (ConnectionError, OSError):
             # Stream may be stale — evict and retry once
             self._evict_stream(peer_id)
             logger.warning("pay_stream_error_retrying", peer_id=peer_id)
-            return await _attempt_pay()
+            voucher = await _attempt_pay()
+
+        # Record reputation
+        response_time = time.time() - t0
+        self.reputation_tracker.record_payment_sent(peer_id, amount, response_time)
+
+        # Create receipt
+        prev_hash = self.receipt_store.get_previous_hash(channel_id)
+        receipt = SignedReceipt.create(
+            channel_id=channel_id,
+            nonce=voucher.nonce,
+            amount=voucher.amount,
+            sender=channel.sender,
+            receiver=channel.receiver,
+            previous_receipt_hash=prev_hash,
+            private_key=self.wallet.private_key,
+        )
+        self.receipt_store.add(receipt)
+
+        # Broadcast receipt on gossipsub
+        if self.broadcaster:
+            await self.broadcaster.publish(
+                TOPIC_PAYMENT_RECEIPTS, receipt.to_dict()
+            )
+
+        return voucher
 
     async def close_channel(self, channel_id: bytes) -> None:
         """Cooperatively close a payment channel.
@@ -511,6 +590,7 @@ class AgentNode:
             destination=destination,
             amount=amount,
             base_timeout=base_timeout,
+            reputation_fn=self.reputation_tracker.get_trust_score,
         )
 
     async def route_payment(
@@ -857,12 +937,129 @@ class AgentNode:
         self, msg: Any, remote_peer: str
     ) -> tuple[MessageType, Any] | None:
         """Handle HTLC fulfill from downstream — propagate preimage upstream."""
-        # This is handled inline in _on_htlc_propose for forwarding.
-        # Direct fulfills arrive as responses, not unsolicited messages.
+        self.reputation_tracker.record_htlc_fulfilled(remote_peer)
         return None
 
     async def _on_htlc_cancel(
         self, msg: Any, remote_peer: str
     ) -> tuple[MessageType, Any] | None:
         """Handle HTLC cancel from downstream — propagate upstream."""
+        self.reputation_tracker.record_htlc_cancelled(remote_peer)
         return None
+
+    # ------------------------------------------------------------------
+    # Discovery & Capability broadcasting
+    # ------------------------------------------------------------------
+
+    async def _broadcast_capabilities(self) -> None:
+        """Publish our capabilities on the capability topic."""
+        if not self.broadcaster:
+            return
+        caps = [
+            AgentCapability.from_dict(c) for c in self.config.discovery.capabilities
+        ]
+        ad = AgentAdvertisement(
+            peer_id=self.peer_id.to_base58(),
+            eth_address=self.wallet.address,
+            capabilities=caps,
+            addrs=self.listen_addrs,
+        )
+        # Register ourselves in local registry
+        self.capability_registry.register(ad)
+        await self.broadcaster.publish(
+            TOPIC_AGENT_CAPABILITIES, ad.to_dict()
+        )
+
+    async def _handle_capability_announce(self, data: dict, from_peer: PeerID) -> None:
+        """Handle incoming capability advertisement from gossipsub."""
+        info = data.get("data", data)
+        try:
+            ad = AgentAdvertisement.from_dict(info)
+            self.capability_registry.register(ad)
+        except (KeyError, TypeError):
+            logger.debug("invalid_capability_announce", from_peer=str(from_peer))
+
+    # ------------------------------------------------------------------
+    # Negotiation callbacks (called by protocol handler)
+    # ------------------------------------------------------------------
+
+    async def _on_negotiate_propose(
+        self, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle incoming negotiation proposal."""
+        neg = self.negotiation_manager.propose(
+            initiator=remote_peer,
+            responder=self.peer_id.to_base58(),
+            service_type=msg.service_type,
+            proposed_price=msg.proposed_price,
+            channel_deposit=msg.channel_deposit,
+            timeout=float(msg.timeout),
+        )
+        return MessageType.PAYMENT_ACK, PaymentAck(
+            channel_id=b"\x00" * 32,
+            nonce=0,
+            status="accepted",
+            reason=neg.negotiation_id,
+        )
+
+    async def _on_negotiate_counter(
+        self, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle incoming counter-offer."""
+        from agentic_payments.protocol.messages import PaymentAck
+
+        try:
+            self.negotiation_manager.counter(msg.negotiation_id, remote_peer, msg.counter_price)
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=b"\x00" * 32, nonce=0, status="accepted"
+            )
+        except (KeyError, ValueError) as e:
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=b"\x00" * 32, nonce=0, status="rejected", reason=str(e)
+            )
+
+    async def _on_negotiate_accept(
+        self, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle negotiation acceptance."""
+        from agentic_payments.protocol.messages import PaymentAck
+
+        try:
+            self.negotiation_manager.accept(msg.negotiation_id, remote_peer)
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=b"\x00" * 32, nonce=0, status="accepted"
+            )
+        except (KeyError, ValueError) as e:
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=b"\x00" * 32, nonce=0, status="rejected", reason=str(e)
+            )
+
+    async def _on_negotiate_reject(
+        self, msg: Any, remote_peer: str
+    ) -> tuple[MessageType, Any] | None:
+        """Handle negotiation rejection."""
+        from agentic_payments.protocol.messages import PaymentAck
+
+        try:
+            self.negotiation_manager.reject(msg.negotiation_id, remote_peer)
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=b"\x00" * 32, nonce=0, status="accepted"
+            )
+        except (KeyError, ValueError) as e:
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=b"\x00" * 32, nonce=0, status="rejected", reason=str(e)
+            )
+
+    async def negotiate(
+        self, peer_id: str, service_type: str, proposed_price: int, channel_deposit: int
+    ) -> dict:
+        """Initiate a negotiation with a peer. Auto-opens channel on accept."""
+        self._require_started()
+        neg = self.negotiation_manager.propose(
+            initiator=self.peer_id.to_base58(),
+            responder=peer_id,
+            service_type=service_type,
+            proposed_price=proposed_price,
+            channel_deposit=channel_deposit,
+        )
+        return neg.to_dict()

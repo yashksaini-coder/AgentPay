@@ -87,6 +87,94 @@ export interface NetworkGraphData {
   channel_count: number;
 }
 
+// ---------- New subsystem types ----------
+
+export interface AgentCapability {
+  service_type: string;
+  price_per_call: number;
+  description: string;
+}
+
+export interface DiscoveredAgent {
+  peer_id: string;
+  eth_address: string;
+  capabilities: AgentCapability[];
+  addrs: string[];
+  last_seen: number;
+}
+
+export type NegotiationState = "proposed" | "countered" | "accepted" | "rejected" | "expired" | "channel_opened";
+
+export interface NegotiationEvent {
+  action: string;
+  price: number;
+  by: string;
+  timestamp: number;
+}
+
+export interface Negotiation {
+  negotiation_id: string;
+  initiator: string;
+  responder: string;
+  service_type: string;
+  proposed_price: number;
+  current_price: number;
+  channel_deposit: number;
+  timeout: number;
+  state: NegotiationState;
+  channel_id: string | null;
+  history: NegotiationEvent[];
+  created_at: number;
+}
+
+export interface WalletPolicy {
+  max_spend_per_tx: number;
+  max_total_spend: number;
+  rate_limit_per_min: number;
+  peer_whitelist: string[];
+  peer_blacklist: string[];
+}
+
+export interface PolicyStats {
+  total_spent: number;
+  payments_last_minute: number;
+  policy: WalletPolicy;
+}
+
+export interface PeerReputation {
+  peer_id: string;
+  payments_sent: number;
+  payments_received: number;
+  payments_failed: number;
+  htlcs_fulfilled: number;
+  htlcs_cancelled: number;
+  total_volume: number;
+  avg_response_time: number;
+  trust_score: number;
+  total_interactions: number;
+  first_seen: number;
+}
+
+export interface Receipt {
+  receipt_id: string;
+  channel_id: string;
+  nonce: number;
+  amount: number;
+  timestamp: number;
+  sender: string;
+  receiver: string;
+  previous_receipt_hash: string;
+  receipt_hash: string;
+  signature: string;
+}
+
+export interface GatedResource {
+  path: string;
+  price: number;
+  description: string;
+  payment_type: string;
+}
+
 // ---------- API calls (parameterized by base URL) ----------
 
 export function createApi(base: string = DEFAULT_API) {
@@ -125,6 +213,59 @@ export function createApi(base: string = DEFAULT_API) {
         body: JSON.stringify({ destination, amount, known_channels: knownChannels }),
       }),
     getGraph: () => fetchApi<NetworkGraphData>(base, "/graph"),
+
+    // Discovery
+    getDiscoveredAgents: (capability?: string) =>
+      fetchApi<{ agents: DiscoveredAgent[]; count: number }>(base, `/discovery/agents${capability ? `?capability=${capability}` : ""}`),
+    getDiscoveryResources: () =>
+      fetchApi<{ providers: unknown[]; count: number }>(base, "/discovery/resources"),
+
+    // Negotiations
+    negotiate: (peerId: string, serviceType: string, proposedPrice: number, channelDeposit: number) =>
+      fetchApi<{ negotiation: Negotiation }>(base, "/negotiate", {
+        method: "POST",
+        body: JSON.stringify({ peer_id: peerId, service_type: serviceType, proposed_price: proposedPrice, channel_deposit: channelDeposit }),
+      }),
+    getNegotiations: () =>
+      fetchApi<{ negotiations: Negotiation[]; count: number }>(base, "/negotiations"),
+    getNegotiation: (id: string) =>
+      fetchApi<{ negotiation: Negotiation }>(base, `/negotiations/${id}`),
+    counterNegotiation: (id: string, counterPrice: number) =>
+      fetchApi<{ negotiation: Negotiation }>(base, `/negotiations/${id}/counter`, {
+        method: "POST",
+        body: JSON.stringify({ counter_price: counterPrice }),
+      }),
+    acceptNegotiation: (id: string) =>
+      fetchApi<{ negotiation: Negotiation }>(base, `/negotiations/${id}/accept`, { method: "POST" }),
+    rejectNegotiation: (id: string) =>
+      fetchApi<{ negotiation: Negotiation }>(base, `/negotiations/${id}/reject`, { method: "POST" }),
+
+    // Policies
+    getPolicies: () => fetchApi<PolicyStats>(base, "/policies"),
+    updatePolicies: (policy: Partial<WalletPolicy>) =>
+      fetchApi<{ policy: WalletPolicy }>(base, "/policies", {
+        method: "PUT",
+        body: JSON.stringify(policy),
+      }),
+
+    // Reputation
+    getReputation: () => fetchApi<{ peers: PeerReputation[]; count: number }>(base, "/reputation"),
+    getPeerReputation: (peerId: string) =>
+      fetchApi<{ reputation: PeerReputation }>(base, `/reputation/${peerId}`),
+
+    // Receipts
+    getReceipts: () =>
+      fetchApi<{ channels: { channel_id: string; receipt_count: number; chain_valid: boolean }[]; count: number }>(base, "/receipts"),
+    getChannelReceipts: (channelId: string) =>
+      fetchApi<{ channel_id: string; receipts: Receipt[]; count: number; chain_valid: boolean }>(base, `/receipts/${channelId}`),
+
+    // Gateway
+    getGatewayResources: () => fetchApi<{ provider: unknown; resources: GatedResource[] }>(base, "/gateway/resources"),
+    registerGatewayResource: (path: string, price: number, description?: string) =>
+      fetchApi<{ resource: GatedResource }>(base, "/gateway/register", {
+        method: "POST",
+        body: JSON.stringify({ path, price, description }),
+      }),
   };
 }
 

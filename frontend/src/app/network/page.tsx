@@ -4,18 +4,24 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useAgent, type AgentState } from "@/lib/useAgent";
 import { useNetworkEvents, type NetworkEvent } from "@/lib/useNetworkEvents";
 import { useAgentManager } from "@/lib/useAgentManager";
-import { formatWei, shortenAddr, shortenId, type Channel } from "@/lib/api";
+import { formatWei, type Channel } from "@/lib/api";
 import Nav from "@/components/Nav";
 import NetworkGraph, { type LoadingNode, type GraphInteraction, type AnimatingRoute } from "@/components/NetworkGraph";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { Area, AreaChart, Bar, BarChart, XAxis } from "recharts";
+import { Area, AreaChart, XAxis } from "recharts";
 
-const AGENT_COLORS = [
-  "#7c6df0", "#34d399", "#f59e0b", "#ec4899",
-  "#06b6d4", "#f97316", "#8b5cf6", "#14b8a6",
-];
+// Status colors for operations
+const STATUS_EXECUTING = "#3b82f6";   // blue
+const STATUS_COMPLETED = "#22c55e";   // green
+const STATUS_FAILED = "#a855f7";      // purple
+const NODE_NEUTRAL = "#8b8fa3";       // grey for dots
 
 // ── AgentHook — render-less hook bridge ──
 function AgentHook({ port, onState }: { port: number; onState: (port: number, state: AgentState) => void }) {
@@ -69,6 +75,11 @@ export default function NetworkPage() {
     }
     return list;
   }, [agentPorts, agentStates]);
+
+  // Keep a ref to always-current agents for async simulation code
+  const allAgentsRef = useRef(allAgents);
+  allAgentsRef.current = allAgents;
+  const getAgents = useCallback(() => allAgentsRef.current, []);
 
   const [agentNames, setAgentNames] = useState<Map<number, string>>(new Map());
   const agentLabel = useCallback((i: number) => {
@@ -146,10 +157,8 @@ export default function NetworkPage() {
   const [interactionDeposit, setInteractionDeposit] = useState("1000000");
   const [interactionAmount, setInteractionAmount] = useState("100000");
   const [interactionLoading, setInteractionLoading] = useState(false);
-  const [interactionResult, setInteractionResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleGraphInteraction = useCallback((gi: GraphInteraction) => {
-    setInteractionResult(null);
     if (gi.type === "node-pair") {
       const source = allAgents.find((a) => a.identity?.peer_id === gi.sourcePeerId);
       const target = allAgents.find((a) => a.identity?.peer_id === gi.targetPeerId);
@@ -209,11 +218,11 @@ export default function NetworkPage() {
     // Close popup, show connecting animation on both nodes
     setInteraction(null);
     const ln: LoadingNode[] = [];
-    if (sPid) ln.push({ peerId: sPid, color: "#7c6df0" });
-    if (rPid) ln.push({ peerId: rPid, color: "#7c6df0" });
+    if (sPid) ln.push({ peerId: sPid, color: STATUS_EXECUTING });
+    if (rPid) ln.push({ peerId: rPid, color: STATUS_EXECUTING });
     setLoadingNodes(ln);
     // Show animated route line between the two nodes during connection
-    if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#7c6df0", type: "channel" });
+    if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: STATUS_EXECUTING, type: "channel" });
 
     try {
       // Auto-connect peers before opening channel
@@ -251,8 +260,8 @@ export default function NetworkPage() {
     // Close dialog and show animation
     setInteraction(null);
     const ln: LoadingNode[] = [];
-    if (sPid) ln.push({ peerId: sPid, color: "#f59e0b" });
-    if (rPid) ln.push({ peerId: rPid, color: "#34d399" });
+    if (sPid) ln.push({ peerId: sPid, color: STATUS_EXECUTING });
+    if (rPid) ln.push({ peerId: rPid, color: STATUS_EXECUTING });
     setLoadingNodes(ln);
 
     try {
@@ -261,14 +270,11 @@ export default function NetworkPage() {
       try {
         const routeRes = await sender.api.findRoute(rPid, amountVal, knownChannels);
         routeHops = [sPid!, ...routeRes.route.hops.map((h: { peer_id: string }) => h.peer_id)];
-        // Animate intermediate hops on the graph
-        setAnimatingRoute({ hops: routeHops, color: "#f59e0b", type: "payment" });
-        // Also light up intermediate nodes
-        const intermediateNodes: LoadingNode[] = routeHops.map((pid) => ({ peerId: pid, color: "#f59e0b" }));
+        setAnimatingRoute({ hops: routeHops, color: STATUS_EXECUTING, type: "payment" });
+        const intermediateNodes: LoadingNode[] = routeHops.map((pid) => ({ peerId: pid, color: STATUS_EXECUTING }));
         setLoadingNodes(intermediateNodes);
       } catch {
-        // If route finding fails, just animate endpoints
-        if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#f59e0b", type: "payment" });
+        if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: STATUS_EXECUTING, type: "payment" });
       }
 
       const [res] = await Promise.all([
@@ -304,10 +310,10 @@ export default function NetworkPage() {
     setInteraction(null);
 
     const ln: LoadingNode[] = [];
-    if (sPid) ln.push({ peerId: sPid, color: "#fb923c" });
-    if (rPid) ln.push({ peerId: rPid, color: "#34d399" });
+    if (sPid) ln.push({ peerId: sPid, color: STATUS_EXECUTING });
+    if (rPid) ln.push({ peerId: rPid, color: STATUS_EXECUTING });
     setLoadingNodes(ln);
-    if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#34d399", type: "payment" });
+    if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: STATUS_EXECUTING, type: "payment" });
 
     try {
       const [res] = await Promise.all([
@@ -337,16 +343,6 @@ export default function NetworkPage() {
           <Nav />
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            {allAgents.map((a, i) => (
-              <span key={i} className={`w-2 h-2 rounded-full ${a.online ? "animate-pulse-soft" : ""}`}
-                style={{ backgroundColor: a.online ? AGENT_COLORS[i % AGENT_COLORS.length] : "rgba(255,255,255,0.15)" }}
-                title={`${agentLabel(i)}: ${a.online ? "online" : "offline"}`} />
-            ))}
-          </div>
-          <span className="text-[10px] font-mono text-text-muted tabular-nums">
-            {onlineCount}/{allAgents.length} nodes · {activeChannels} ch
-          </span>
           {manager.loading && <span className="w-2.5 h-2.5 border border-accent/30 border-t-accent rounded-full animate-spin" />}
         </div>
       </header>
@@ -367,26 +363,11 @@ export default function NetworkPage() {
             <StatRow label="Remaining" value={formatWei(totalRemaining)} />
           </Section>
 
-          {allAgents.length > 0 && (
-            <Section title="Balance by Agent">
-              <AgentBalanceChart agents={allAgents} agentLabel={agentLabel} />
-            </Section>
-          )}
-
           {paymentHistory.length > 1 && (
             <Section title="Payment Flow">
               <PaymentFlowChart data={paymentHistory} />
             </Section>
           )}
-
-          <Section title="Agents">
-            {allAgents.map((agent, i) => (
-              <AgentMiniCard key={i} agent={agent} index={i} label={agentLabel(i)} />
-            ))}
-            {allAgents.length === 0 && (
-              <p className="text-[10px] text-text-muted text-center py-2">No agents</p>
-            )}
-          </Section>
         </aside>
 
         {/* ── Center: graph ── */}
@@ -404,7 +385,6 @@ export default function NetworkPage() {
                   interactionAmount={interactionAmount}
                   setInteractionAmount={setInteractionAmount}
                   interactionLoading={interactionLoading}
-                  interactionResult={interactionResult}
                   onClose={() => setInteraction(null)}
                   onOpenChannel={handleOpenChannel}
                   onSendPayment={handleSendPayment}
@@ -475,6 +455,7 @@ export default function NetworkPage() {
                 setLoadingNodes={setLoadingNodes} setAnimatingRoute={setAnimatingRoute}
                 collectKnownChannels={collectKnownChannels} pushEvent={pushEvent}
                 agentNames={agentNames} setAgentNames={setAgentNames}
+                getAgents={getAgents}
               />
               <RoutePaymentForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} setLoadingNodes={setLoadingNodes} setAnimatingRoute={setAnimatingRoute} collectKnownChannels={collectKnownChannels} pushEvent={pushEvent} />
               <FallbackOpenChannelForm agents={allAgents} onlineAgents={onlineAgents} lbl={lbl} pushEvent={pushEvent} />
@@ -509,88 +490,10 @@ function StatRow({ label, value, accent }: { label: string; value: string; accen
   );
 }
 
-function AgentMiniCard({ agent, index, label }: { agent: AgentState; index: number; label: string }) {
-  const [open, setOpen] = useState(false);
-  const color = AGENT_COLORS[index % AGENT_COLORS.length];
-  return (
-    <div className="border border-border-subtle rounded-md overflow-hidden">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-overlay/40 transition-colors text-left">
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${agent.online ? "animate-pulse-soft" : ""}`}
-          style={{ backgroundColor: agent.online ? color : "rgba(255,255,255,0.15)" }} />
-        <span className="text-[11px] font-semibold" style={{ color }}>{label}</span>
-        <span className="ml-auto text-[9px] text-text-muted font-mono">
-          {agent.channels.filter((c) => c.state === "ACTIVE").length}ch
-        </span>
-        <svg className={`w-2.5 h-2.5 text-text-muted transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-        </svg>
-      </button>
-      {open && agent.online && (
-        <div className="px-2 pb-2 space-y-0.5 text-[10px] border-t border-border-subtle pt-1.5">
-          {agent.identity?.peer_id && <DetailRow label="Peer" value={shortenId(agent.identity.peer_id, 6)} />}
-          {agent.identity?.eth_address && <DetailRow label="ETH" value={shortenAddr(agent.identity.eth_address)} />}
-          {agent.balance && (
-            <>
-              <DetailRow label="Dep" value={formatWei(agent.balance.total_deposited)} />
-              <DetailRow label="Paid" value={formatWei(agent.balance.total_paid)} />
-            </>
-          )}
-          {agent.channels.length > 0 && (
-            <div className="max-h-[80px] overflow-y-auto mt-1 space-y-0.5">
-              {agent.channels.map((ch) => (
-                <div key={ch.channel_id} className="flex items-center justify-between">
-                  <span className="font-mono text-text-muted truncate">{ch.channel_id.slice(0, 8)}...</span>
-                  <span className={`text-[8px] uppercase px-1 rounded ${ch.state === "ACTIVE" ? "bg-success/10 text-success" : "text-text-muted"}`}>{ch.state}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-1">
-      <span className="text-text-muted">{label}</span>
-      <span className="font-mono text-text-secondary truncate">{value}</span>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════
 // Charts
 // ═══════════════════════════════════════════════════════════
-
-const balanceChartConfig: ChartConfig = {
-  deposited: { label: "Deposited", color: "#7c6df0" },
-  paid: { label: "Paid", color: "#34d399" },
-};
-
-function AgentBalanceChart({ agents, agentLabel }: { agents: AgentState[]; agentLabel: (i: number) => string }) {
-  const data = agents
-    .filter((a) => a.online && a.balance)
-    .map((a, i) => ({
-      name: agentLabel(i).replace("Agent ", ""),
-      deposited: a.balance!.total_deposited,
-      paid: a.balance!.total_paid,
-    }));
-
-  if (data.length === 0) return <p className="text-[10px] text-text-muted text-center py-2">No data</p>;
-
-  return (
-    <ChartContainer config={balanceChartConfig} className="h-[80px] w-full">
-      <BarChart data={data} barGap={2}>
-        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "#7a7a94" }} />
-        <ChartTooltip content={<ChartTooltipContent />} />
-        <Bar dataKey="deposited" fill="var(--color-deposited)" radius={[3, 3, 0, 0]} maxBarSize={20} />
-        <Bar dataKey="paid" fill="var(--color-paid)" radius={[3, 3, 0, 0]} maxBarSize={20} />
-      </BarChart>
-    </ChartContainer>
-  );
-}
 
 const flowChartConfig: ChartConfig = {
   amount: { label: "Amount", color: "#fbbf24" },
@@ -658,8 +561,6 @@ function EventsList({ events }: { events: NetworkEvent[] }) {
 // Fallback sidebar forms (kept as backup)
 // ═══════════════════════════════════════════════════════════
 
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
 function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnimatingRoute, collectKnownChannels, pushEvent }: {
   agents: AgentState[];
   onlineAgents: AgentState[];
@@ -700,8 +601,8 @@ function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnima
 
     setLoading(true); setResult(null);
     const ln: LoadingNode[] = [];
-    if (sPid) ln.push({ peerId: sPid, color: "#f59e0b" });
-    if (rPid) ln.push({ peerId: rPid, color: "#34d399" });
+    if (sPid) ln.push({ peerId: sPid, color: STATUS_EXECUTING });
+    if (rPid) ln.push({ peerId: rPid, color: STATUS_EXECUTING });
     setLoadingNodes(ln);
 
     try {
@@ -709,10 +610,10 @@ function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnima
       try {
         const routeRes = await sender.api.findRoute(rPid, amountVal, knownChannels);
         const routeHops = [sPid!, ...routeRes.route.hops.map((h: { peer_id: string }) => h.peer_id)];
-        setAnimatingRoute({ hops: routeHops, color: "#f59e0b", type: "payment" });
-        setLoadingNodes(routeHops.map((pid) => ({ peerId: pid, color: "#f59e0b" })));
+        setAnimatingRoute({ hops: routeHops, color: STATUS_EXECUTING, type: "payment" });
+        setLoadingNodes(routeHops.map((pid) => ({ peerId: pid, color: STATUS_EXECUTING })));
       } catch {
-        if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: "#f59e0b", type: "payment" });
+        if (sPid && rPid) setAnimatingRoute({ hops: [sPid, rPid], color: STATUS_EXECUTING, type: "payment" });
       }
 
       const [res] = await Promise.all([
@@ -779,7 +680,7 @@ function RoutePaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, setAnima
           <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000" required min="1" type="number" disabled={loading}
             className="w-full h-7 bg-surface-overlay border border-border rounded-md px-2 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus-ring disabled:opacity-50" />
         </div>
-        {result && <ResultMsg result={result} />}
+
         <Button type="submit" disabled={loading || !receiverIdx || senderIdx === receiverIdx} variant="secondary" size="sm" className="w-full h-7 text-[10px] bg-warning/80 hover:bg-warning text-black font-semibold">
           {loading ? "Routing..." : "Route Payment (HTLC)"}
         </Button>
@@ -865,7 +766,7 @@ function FallbackOpenChannelForm({ agents, onlineAgents, lbl, pushEvent }: {
           <input value={deposit} onChange={(e) => setDeposit(e.target.value)} placeholder="1000000" required min="1" type="number"
             className="w-full h-7 bg-surface-overlay border border-border rounded-md px-2 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus-ring" />
         </div>
-        {result && <ResultMsg result={result} />}
+
         <Button type="submit" disabled={loading || senderIdx === receiverIdx} size="sm" className="w-full h-7 text-[10px]">
           {loading ? "Opening..." : "Open Channel"}
         </Button>
@@ -902,8 +803,8 @@ function FallbackSendPaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, p
 
     setLoading(true); setResult(null);
     const ln: LoadingNode[] = [];
-    if (sPid) ln.push({ peerId: sPid, color: "#fb923c" });
-    if (rPid) ln.push({ peerId: rPid, color: "#34d399" });
+    if (sPid) ln.push({ peerId: sPid, color: STATUS_EXECUTING });
+    if (rPid) ln.push({ peerId: rPid, color: STATUS_EXECUTING });
     setLoadingNodes(ln);
 
     try {
@@ -961,7 +862,7 @@ function FallbackSendPaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, p
           <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="100000" required min="1" type="number" disabled={loading}
             className="w-full h-7 bg-surface-overlay border border-border rounded-md px-2 text-[10px] font-mono text-text-primary placeholder:text-text-muted focus-ring disabled:opacity-50" />
         </div>
-        {result && <ResultMsg result={result} />}
+
         <Button type="submit" disabled={loading || !channelId} variant="secondary" size="sm" className="w-full h-7 text-[10px] bg-success/80 hover:bg-success text-white">
           {loading ? "Transferring..." : "Send Payment"}
         </Button>
@@ -977,7 +878,7 @@ function FallbackSendPaymentForm({ agents, onlineAgents, lbl, setLoadingNodes, p
 function InteractionPopup({
   interaction, interactionDeposit, setInteractionDeposit,
   interactionAmount, setInteractionAmount,
-  interactionLoading, interactionResult, onClose,
+  interactionLoading, onClose,
   onOpenChannel, onSendPayment, onRoutePayment, onSwitchToRoutePay, onSwitchToChannel,
   lbl, allAgents,
 }: {
@@ -985,7 +886,6 @@ function InteractionPopup({
   interactionDeposit: string; setInteractionDeposit: (v: string) => void;
   interactionAmount: string; setInteractionAmount: (v: string) => void;
   interactionLoading: boolean;
-  interactionResult: { ok: boolean; msg: string } | null;
   onClose: () => void;
   onOpenChannel: () => void;
   onSendPayment: () => void;
@@ -1022,7 +922,7 @@ function InteractionPopup({
           <input value={interactionDeposit} onChange={(e) => setInteractionDeposit(e.target.value)} type="number" min="1"
             className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
         </div>
-        {interactionResult && <ResultMsg result={interactionResult} />}
+
         <Button onClick={onOpenChannel} disabled={interactionLoading} size="sm" className="w-full h-8 text-xs">
           {interactionLoading ? "Connecting & Opening..." : "Open Channel"}
         </Button>
@@ -1050,7 +950,7 @@ function InteractionPopup({
           <input value={interactionAmount} onChange={(e) => setInteractionAmount(e.target.value)} type="number" min="1"
             className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
         </div>
-        {interactionResult && <ResultMsg result={interactionResult} />}
+
         <Button onClick={onSendPayment} disabled={interactionLoading} variant="secondary" size="sm" className="w-full h-8 text-xs bg-success/80 hover:bg-success text-white">
           {interactionLoading ? "Sending..." : "Send Direct Payment"}
         </Button>
@@ -1087,7 +987,6 @@ function InteractionPopup({
         <input value={interactionAmount} onChange={(e) => setInteractionAmount(e.target.value)} type="number" min="1"
           className="w-full h-8 bg-surface-overlay border border-border rounded-lg px-3 text-xs font-mono text-text-primary placeholder:text-text-muted focus-ring" />
       </div>
-      {interactionResult && <ResultMsg result={interactionResult} />}
       <Button onClick={onRoutePayment} disabled={interactionLoading} variant="secondary" size="sm" className="w-full h-8 text-xs bg-warning/80 hover:bg-warning text-black font-semibold">
         {interactionLoading ? "Routing..." : "Route Payment (HTLC)"}
       </Button>
@@ -1098,24 +997,24 @@ function InteractionPopup({
   );
 }
 
-function ResultMsg({ result }: { result: { ok: boolean; msg: string } }) {
-  return (
-    <div className={`text-[11px] rounded-md px-2 py-1.5 ${result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
-      {result.msg}
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════
 // Simulation Panel
 // ═══════════════════════════════════════════════════════════
 
 type SimPhase = "idle" | "spawning" | "connecting" | "simulating" | "done";
+type SimSpeed = "slow" | "normal" | "fast" | "turbo";
+const SPEED_CONFIG: Record<SimSpeed, { spawnDelay: number; channelDelay: number; payDelay: number; animateEvery: number; channelBatch: number; payBatch: number }> = {
+  slow:   { spawnDelay: 1500, channelDelay: 400, payDelay: 600,  animateEvery: 1,  channelBatch: 1, payBatch: 1  },
+  normal: { spawnDelay: 1000, channelDelay: 150, payDelay: 200,  animateEvery: 3,  channelBatch: 2, payBatch: 2  },
+  fast:   { spawnDelay: 800,  channelDelay: 50,  payDelay: 50,   animateEvery: 10, channelBatch: 4, payBatch: 5  },
+  turbo:  { spawnDelay: 600,  channelDelay: 0,   payDelay: 0,    animateEvery: 50, channelBatch: 8, payBatch: 10 },
+};
 
 function SimulationPanel({
   manager, allAgents, onlineAgents, lbl, agentLabel,
   setLoadingNodes, setAnimatingRoute, collectKnownChannels, pushEvent,
-  agentNames, setAgentNames,
+  agentNames, setAgentNames, getAgents,
 }: {
   manager: ReturnType<typeof useAgentManager>;
   allAgents: AgentState[];
@@ -1128,6 +1027,7 @@ function SimulationPanel({
   pushEvent: (e: Omit<NetworkEvent, "id" | "timestamp">) => void;
   agentNames: Map<number, string>;
   setAgentNames: React.Dispatch<React.SetStateAction<Map<number, string>>>;
+  getAgents: () => AgentState[];
 }) {
   const [nodeCount, setNodeCount] = useState("4");
   const [deposit, setDeposit] = useState("5000000");
@@ -1137,12 +1037,22 @@ function SimulationPanel({
   const [phase, setPhase] = useState<SimPhase>("idle");
   const [progress, setProgress] = useState("");
   const [topology, setTopology] = useState<"ring" | "mesh" | "random">("ring");
+  const [speed, setSpeed] = useState<SimSpeed>("normal");
   const cancelRef = useRef(false);
   const [editingNames, setEditingNames] = useState(false);
+  const [stats, setStats] = useState({ ok: 0, fail: 0, total: 0 });
 
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
+  const sleep = (ms: number) => ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
   const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+  // Resolve multiaddr helper
+  const resolveAddr = (agent: AgentState) => {
+    const addrs = agent.identity?.addrs ?? [];
+    const tcp = addrs.find((a) => a.includes("/tcp/") && !a.includes("/ws"));
+    if (!tcp) return null;
+    const addr = tcp.replace("/ip4/0.0.0.0/", "/ip4/127.0.0.1/");
+    return addr.includes("/p2p/") ? addr : `${addr}/p2p/${agent.identity!.peer_id}`;
+  };
 
   const runSimulation = async () => {
     cancelRef.current = false;
@@ -1151,204 +1061,212 @@ function SimulationPanel({
     const rounds = parseInt(paymentRounds);
     const lo = parseInt(minPay);
     const hi = parseInt(maxPay);
+    const cfg = SPEED_CONFIG[speed];
 
-    if (isNaN(count) || count < 2 || count > 20) return;
+    if (isNaN(count) || count < 2 || count > 50) return;
     if (isNaN(dep) || dep < 1000) return;
     if (isNaN(rounds) || rounds < 1) return;
 
-    // Phase 1: Spawn nodes (skip already-running ones)
+    setStats({ ok: 0, fail: 0, total: 0 });
+
+    // ── Phase 1: Spawn nodes ──
     setPhase("spawning");
     const needed = count - manager.agents.length;
     if (needed > 0) {
       for (let i = 0; i < needed; i++) {
         if (cancelRef.current) { setPhase("idle"); return; }
-        setProgress(`Spawning node ${i + 1}/${needed}...`);
+        setProgress(`Spawning ${i + 1}/${needed}`);
         await manager.startAgent();
-        await sleep(1500); // let agent boot
+        await sleep(cfg.spawnDelay);
       }
-      // Wait for all agents to be online
-      setProgress("Waiting for nodes to come online...");
-      await sleep(3000);
+      setProgress("Waiting for nodes...");
+      // Poll until enough agents are online or timeout
+      const deadline = Date.now() + 15000;
+      while (getAgents().filter((a) => a.online).length < count && Date.now() < deadline) {
+        await manager.refresh();
+        await sleep(500);
+      }
     }
-    setProgress(`${count} nodes ready`);
+    const readyCount = getAgents().filter((a) => a.online && a.identity?.peer_id).length;
+    setProgress(`${Math.min(count, readyCount)} nodes ready`);
 
-    // Phase 2: Connect peers and open channels
+    // ── Phase 2: Open channels ──
     setPhase("connecting");
-    // Refresh to get latest agent states
     await manager.refresh();
-    await sleep(1000);
+    await sleep(300);
 
-    // Build pairs based on topology
-    // We need to work with the online agents at this point
-    // Re-read from the current allAgents prop
-    const agents = [...onlineAgents];
-    if (agents.length < 2) {
-      setPhase("idle");
-      setProgress("Not enough agents online");
-      return;
-    }
+    // Use fresh agents from ref — onlineAgents may be stale in this closure
+    let agents = getAgents().filter((a) => a.online && a.identity?.peer_id);
+    if (agents.length < 2) { setPhase("idle"); setProgress("Not enough agents"); return; }
 
+    // Build topology pairs
     const pairs: [number, number][] = [];
     if (topology === "ring") {
-      for (let i = 0; i < agents.length; i++) {
-        pairs.push([i, (i + 1) % agents.length]);
-      }
+      for (let i = 0; i < agents.length; i++) pairs.push([i, (i + 1) % agents.length]);
     } else if (topology === "mesh") {
-      for (let i = 0; i < agents.length; i++) {
-        for (let j = i + 1; j < agents.length; j++) {
-          pairs.push([i, j]);
-        }
-      }
+      for (let i = 0; i < agents.length; i++)
+        for (let j = i + 1; j < agents.length; j++) pairs.push([i, j]);
     } else {
-      // Random: each node connects to 1-2 random peers
-      const connected = new Set<string>();
+      const seen = new Set<string>();
       for (let i = 0; i < agents.length; i++) {
-        const numConnections = randInt(1, Math.min(2, agents.length - 1));
-        for (let c = 0; c < numConnections; c++) {
+        const n = randInt(1, Math.min(2, agents.length - 1));
+        for (let c = 0; c < n; c++) {
           let j = randInt(0, agents.length - 1);
           while (j === i) j = randInt(0, agents.length - 1);
-          const key = [Math.min(i, j), Math.max(i, j)].join("-");
-          if (!connected.has(key)) {
-            connected.add(key);
-            pairs.push([i, j]);
-          }
+          const k = `${Math.min(i, j)}-${Math.max(i, j)}`;
+          if (!seen.has(k)) { seen.add(k); pairs.push([i, j]); }
         }
       }
     }
 
-    for (let p = 0; p < pairs.length; p++) {
-      if (cancelRef.current) { setPhase("idle"); return; }
-      const [si, ri] = pairs[p];
-      const sender = agents[si];
-      const receiver = agents[ri];
-      if (!sender?.identity?.peer_id || !receiver?.identity?.peer_id || !receiver?.identity?.eth_address) continue;
-
-      // Check if channel already exists between them
-      const alreadyConnected = sender.channels.some(
-        (c) => c.state === "ACTIVE" && c.sender === sender.identity?.eth_address && c.peer_id === receiver.identity?.peer_id
+    // Filter out already-existing channels
+    const todo = pairs.filter(([si, ri]) => {
+      const s = agents[si], r = agents[ri];
+      if (!s?.identity?.peer_id || !r?.identity?.peer_id || !r?.identity?.eth_address) return false;
+      return !s.channels.some(
+        (c) => c.state === "ACTIVE" && c.sender === s.identity?.eth_address && c.peer_id === r.identity?.peer_id
       );
-      if (alreadyConnected) continue;
+    });
 
-      setProgress(`Channel ${p + 1}/${pairs.length}: ${lbl(sender)} → ${lbl(receiver)}`);
+    // Open channels in batches
+    for (let b = 0; b < todo.length; b += cfg.channelBatch) {
+      if (cancelRef.current) { setPhase("idle"); return; }
+      const batch = todo.slice(b, b + cfg.channelBatch);
+      setProgress(`Channels ${b + 1}-${Math.min(b + cfg.channelBatch, todo.length)}/${todo.length}`);
 
-      // Connect peer
-      const addrs = receiver.identity.addrs ?? [];
-      const tcp = addrs.find((a) => a.includes("/tcp/") && !a.includes("/ws"));
-      if (tcp) {
-        const addr = tcp.replace("/ip4/0.0.0.0/", "/ip4/127.0.0.1/");
-        const full = addr.includes("/p2p/") ? addr : `${addr}/p2p/${receiver.identity.peer_id}`;
-        try { await sender.api.connectPeer(full); } catch {}
-      }
-
-      // Open channel
-      try {
-        await sender.api.openChannel(receiver.identity.peer_id, receiver.identity.eth_address, dep);
-        pushEvent({ type: "channel_open", from: lbl(sender), message: `Opened channel to ${lbl(receiver)}`, meta: `Deposit: ${dep.toLocaleString()} wei` });
-        sender.refresh();
-        receiver.refresh();
-      } catch (e) {
-        pushEvent({ type: "status", from: lbl(sender), message: `Channel failed: ${e instanceof Error ? e.message : "error"}` });
-      }
-      await sleep(500);
+      const promises = batch.map(async ([si, ri]) => {
+        const sender = agents[si], receiver = agents[ri];
+        const full = resolveAddr(receiver);
+        if (full) try { await sender.api.connectPeer(full); } catch {}
+        try {
+          await sender.api.openChannel(receiver.identity!.peer_id!, receiver.identity!.eth_address!, dep);
+        } catch {}
+      });
+      await Promise.allSettled(promises);
+      if (cfg.channelDelay > 0) await sleep(cfg.channelDelay);
     }
 
-    setProgress("Channels ready");
-    await sleep(500);
+    // Refresh all agents and wait for state to propagate
+    for (const a of agents) a.refresh();
+    pushEvent({ type: "channel_open", from: "Sim", message: `Opened ${todo.length} channels (${topology})`, meta: `Deposit: ${dep.toLocaleString()} wei each` });
+    await sleep(1500); // Wait for WS/poll to deliver updated channel data
 
-    // Phase 3: Run random payments
+    // ── Phase 3: Run payments ──
     setPhase("simulating");
-    const knownChannels = collectKnownChannels();
 
-    for (let r = 0; r < rounds; r++) {
+    // Re-snapshot agents with fresh channel data
+    agents = getAgents().filter((a) => a.online && a.identity?.peer_id);
+    let knownChannels = collectKnownChannels();
+    let okCount = 0, failCount = 0;
+    const refreshKnownEvery = Math.max(20, Math.floor(rounds / 5));
+
+    for (let r = 0; r < rounds;) {
       if (cancelRef.current) { setPhase("idle"); return; }
-      setProgress(`Payment ${r + 1}/${rounds}`);
 
-      const amount = randInt(lo, hi);
-
-      // Pick random sender that has active outbound channels
-      const sendersWithChannels = agents.filter((a) =>
-        a.channels.some((c) => c.state === "ACTIVE" && c.sender === a.identity?.eth_address && c.remaining_balance > amount)
-      );
-      if (sendersWithChannels.length === 0) {
-        pushEvent({ type: "status", from: "Sim", message: `Round ${r + 1}: No agents with sufficient balance` });
-        continue;
+      // Periodically refresh known channels and agent state for routing
+      if (r > 0 && r % refreshKnownEvery === 0) {
+        for (const a of agents) a.refresh();
+        await sleep(300);
+        agents = getAgents().filter((a) => a.online && a.identity?.peer_id);
+        knownChannels = collectKnownChannels();
       }
 
-      const sender = sendersWithChannels[randInt(0, sendersWithChannels.length - 1)];
-      const senderPid = sender.identity?.peer_id;
+      // Build a batch of payments
+      const batchSize = Math.min(cfg.payBatch, rounds - r);
+      const batchPromises: Promise<boolean>[] = [];
 
-      // Decide: direct or routed payment
-      const directChannels = sender.channels.filter(
-        (c) => c.state === "ACTIVE" && c.sender === sender.identity?.eth_address && c.remaining_balance > amount
-      );
+      for (let bi = 0; bi < batchSize; bi++) {
+        const amount = randInt(lo, hi);
+        const ri = r + bi;
 
-      const useDirect = directChannels.length > 0 && (Math.random() < 0.6 || agents.length <= 2);
-
-      if (useDirect) {
-        // Direct payment
-        const ch = directChannels[randInt(0, directChannels.length - 1)];
-        const receiverAgent = agents.find((a) => a.identity?.eth_address === ch.receiver);
-        const rPid = receiverAgent?.identity?.peer_id;
-
-        // Animate
-        if (senderPid && rPid) {
-          setLoadingNodes([{ peerId: senderPid, color: "#34d399" }, { peerId: rPid, color: "#34d399" }]);
-          setAnimatingRoute({ hops: [senderPid, rPid], color: "#34d399", type: "payment" });
+        // Pick random sender with balance
+        const eligible = agents.filter((a) =>
+          a.channels.some((c) => c.state === "ACTIVE" && c.sender === a.identity?.eth_address && c.remaining_balance > amount)
+        );
+        if (eligible.length === 0) {
+          batchPromises.push(Promise.resolve(false));
+          continue;
         }
 
-        try {
-          await sender.api.sendPayment(ch.channel_id, amount);
-          pushEvent({ type: "payment", from: lbl(sender), message: `Sent ${amount.toLocaleString()} wei to ${receiverAgent ? lbl(receiverAgent) : "peer"}` });
-          sender.refresh();
-        } catch (e) {
-          pushEvent({ type: "status", from: lbl(sender), message: `Direct pay failed: ${e instanceof Error ? e.message : "error"}` });
-        }
-      } else {
-        // Routed payment (HTLC)
-        const otherAgents = agents.filter((a) => a.identity?.peer_id !== senderPid && a.identity?.peer_id);
-        if (otherAgents.length === 0) continue;
-        const receiver = otherAgents[randInt(0, otherAgents.length - 1)];
-        const rPid = receiver.identity!.peer_id!;
+        const sender = eligible[randInt(0, eligible.length - 1)];
+        const senderPid = sender.identity?.peer_id;
+        const directChs = sender.channels.filter(
+          (c) => c.state === "ACTIVE" && c.sender === sender.identity?.eth_address && c.remaining_balance > amount
+        );
+        const useDirect = directChs.length > 0 && (Math.random() < 0.6 || agents.length <= 2);
 
-        if (senderPid && rPid) {
-          setLoadingNodes([{ peerId: senderPid, color: "#f59e0b" }, { peerId: rPid, color: "#f59e0b" }]);
-          setAnimatingRoute({ hops: [senderPid, rPid], color: "#f59e0b", type: "payment" });
-        }
+        // Animate only every Nth payment
+        const shouldAnimate = ri % cfg.animateEvery === 0;
 
-        try {
-          const res = await sender.api.routePayment(rPid!, amount, knownChannels);
-          const hops = res.payment.route.hop_count;
-          pushEvent({ type: "payment", from: lbl(sender), message: `Routed ${amount.toLocaleString()} wei to ${lbl(receiver)} (${hops} hops)` });
-          sender.refresh();
-          receiver.refresh();
-        } catch (e) {
-          pushEvent({ type: "status", from: lbl(sender), message: `Route pay failed: ${e instanceof Error ? e.message : "error"}` });
+        if (useDirect) {
+          const ch = directChs[randInt(0, directChs.length - 1)];
+          const recvAgent = agents.find((a) => a.identity?.eth_address === ch.receiver);
+          const rPid = recvAgent?.identity?.peer_id;
+
+          if (shouldAnimate && senderPid && rPid) {
+            setLoadingNodes([{ peerId: senderPid, color: STATUS_EXECUTING }, { peerId: rPid, color: STATUS_EXECUTING }]);
+            setAnimatingRoute({ hops: [senderPid, rPid], color: STATUS_EXECUTING, type: "payment" });
+          }
+
+          batchPromises.push(
+            sender.api.sendPayment(ch.channel_id, amount).then(() => true, () => false)
+          );
+        } else {
+          const others = agents.filter((a) => a.identity?.peer_id !== senderPid && a.identity?.peer_id);
+          if (others.length === 0) { batchPromises.push(Promise.resolve(false)); continue; }
+          const receiver = others[randInt(0, others.length - 1)];
+          const rPid = receiver.identity!.peer_id!;
+
+          if (shouldAnimate && senderPid) {
+            setLoadingNodes([{ peerId: senderPid, color: STATUS_EXECUTING }, { peerId: rPid, color: STATUS_EXECUTING }]);
+            setAnimatingRoute({ hops: [senderPid, rPid], color: STATUS_EXECUTING, type: "payment" });
+          }
+
+          batchPromises.push(
+            sender.api.routePayment(rPid, amount, knownChannels).then(() => true, () => false)
+          );
         }
       }
 
-      setLoadingNodes([]);
-      setAnimatingRoute(null);
-      await sleep(800);
+      const results = await Promise.allSettled(batchPromises);
+      for (const res of results) {
+        if (res.status === "fulfilled" && res.value) okCount++;
+        else failCount++;
+      }
+
+      r += batchSize;
+      setStats({ ok: okCount, fail: failCount, total: r });
+      setProgress(`${r}/${rounds} — ${okCount} ok, ${failCount} fail`);
+
+      // Push event every 10th batch so the events panel shows progress
+      if (r % (cfg.payBatch * 10) === 0 || r === rounds) {
+        pushEvent({ type: "payment", from: "Sim", message: `Progress: ${okCount} ok / ${failCount} fail (${r}/${rounds})` });
+      }
+
+      if (cfg.payDelay > 0) await sleep(cfg.payDelay);
     }
+
+    setLoadingNodes([]);
+    setAnimatingRoute(null);
+    // Refresh all agents once at the end
+    for (const a of agents) a.refresh();
 
     setPhase("done");
-    setProgress(`Simulation complete: ${rounds} payments`);
-    pushEvent({ type: "status", from: "Sim", message: `Simulation finished — ${rounds} payment rounds` });
+    setProgress(`Done: ${okCount} ok, ${failCount} fail / ${rounds} total`);
+    pushEvent({ type: "payment", from: "Sim", message: `Simulation: ${okCount} payments ok, ${failCount} failed out of ${rounds}` });
   };
+
+  const isRunning = phase === "spawning" || phase === "connecting" || phase === "simulating";
 
   return (
     <div className="rounded-lg border border-accent/20 bg-accent/[0.03] p-3 space-y-2.5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <h4 className="text-[10px] font-semibold uppercase tracking-widest text-accent">Simulation</h4>
-          {phase !== "idle" && phase !== "done" && (
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-          )}
+          {isRunning && <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />}
         </div>
-        {(phase === "spawning" || phase === "connecting" || phase === "simulating") && (
-          <button onClick={() => { cancelRef.current = true; }} className="text-[9px] text-danger hover:text-danger/80 font-medium">
-            Cancel
-          </button>
+        {isRunning && (
+          <Badge variant="outline" className="text-[8px] border-accent/30 text-accent animate-pulse">Running</Badge>
         )}
       </div>
 
@@ -1362,7 +1280,7 @@ function SimulationPanel({
             const port = manager.agents[i]?.apiPort ?? 8080 + i;
             return (
               <div key={i} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: AGENT_COLORS[i % AGENT_COLORS.length] }} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: NODE_NEUTRAL }} />
                 <input
                   className="flex-1 h-5 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring"
                   value={agentNames.get(port) ?? agentLabel(i)}
@@ -1378,75 +1296,116 @@ function SimulationPanel({
       </details>
 
       {/* Controls */}
-      <div className="space-y-1.5">
-        <div className="flex gap-1.5">
-          <div className="flex-1">
-            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Nodes</label>
-            <input value={nodeCount} onChange={(e) => setNodeCount(e.target.value)} type="number" min="2" max="20"
-              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <Label htmlFor="sim-nodes" className="text-[9px] text-text-muted mb-1 block">Nodes</Label>
+            <Input id="sim-nodes" value={nodeCount} onChange={(e) => setNodeCount(e.target.value)} type="number" min="2" max="50" disabled={isRunning}
+              className="h-7 text-[11px] font-mono bg-surface-overlay border-border" />
           </div>
-          <div className="flex-1">
-            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Topology</label>
-            <select value={topology} onChange={(e) => setTopology(e.target.value as typeof topology)}
-              className="w-full h-6 bg-surface-overlay border border-border rounded px-1 text-[10px] text-text-primary focus-ring appearance-none">
-              <option value="ring">Ring</option>
-              <option value="mesh">Mesh</option>
-              <option value="random">Random</option>
-            </select>
+          <div>
+            <Label htmlFor="sim-topo" className="text-[9px] text-text-muted mb-1 block">Topology</Label>
+            <Select value={topology} onValueChange={(v) => setTopology(v as typeof topology)} disabled={isRunning}>
+              <SelectTrigger id="sim-topo" size="sm" className="w-full h-7 text-[11px] bg-surface-overlay border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ring">Ring</SelectItem>
+                <SelectItem value="mesh">Mesh</SelectItem>
+                <SelectItem value="random">Random</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="sim-speed" className="text-[9px] text-text-muted mb-1 block">Speed</Label>
+            <Select value={speed} onValueChange={(v) => setSpeed(v as SimSpeed)} disabled={isRunning}>
+              <SelectTrigger id="sim-speed" size="sm" className="w-full h-7 text-[11px] bg-surface-overlay border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="slow">Slow</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="fast">Fast</SelectItem>
+                <SelectItem value="turbo">Turbo</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
-        <div className="flex gap-1.5">
-          <div className="flex-1">
-            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Deposit/ch</label>
-            <input value={deposit} onChange={(e) => setDeposit(e.target.value)} type="number" min="1000"
-              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label htmlFor="sim-deposit" className="text-[9px] text-text-muted mb-1 block">Deposit/ch</Label>
+            <Input id="sim-deposit" value={deposit} onChange={(e) => setDeposit(e.target.value)} type="number" min="1000" disabled={isRunning}
+              className="h-7 text-[11px] font-mono bg-surface-overlay border-border" />
           </div>
-          <div className="flex-1">
-            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Rounds</label>
-            <input value={paymentRounds} onChange={(e) => setPaymentRounds(e.target.value)} type="number" min="1" max="100"
-              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+          <div>
+            <Label htmlFor="sim-rounds" className="text-[9px] text-text-muted mb-1 block">Rounds</Label>
+            <Input id="sim-rounds" value={paymentRounds} onChange={(e) => setPaymentRounds(e.target.value)} type="number" min="1" max="10000" disabled={isRunning}
+              className="h-7 text-[11px] font-mono bg-surface-overlay border-border" />
           </div>
         </div>
 
-        <div className="flex gap-1.5">
-          <div className="flex-1">
-            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Min pay</label>
-            <input value={minPay} onChange={(e) => setMinPay(e.target.value)} type="number" min="1"
-              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <Label className="text-[9px] text-text-muted">Payment Range</Label>
+            <span className="text-[9px] font-mono text-text-muted tabular-nums">{parseInt(minPay).toLocaleString()} — {parseInt(maxPay).toLocaleString()} wei</span>
           </div>
-          <div className="flex-1">
-            <label className="text-[8px] font-medium text-text-muted block mb-0.5">Max pay</label>
-            <input value={maxPay} onChange={(e) => setMaxPay(e.target.value)} type="number" min="1"
-              className="w-full h-6 bg-surface-overlay border border-border rounded px-1.5 text-[10px] font-mono text-text-primary focus-ring" />
+          <div className="flex items-center gap-2">
+            <Input value={minPay} onChange={(e) => setMinPay(e.target.value)} type="number" min="1" disabled={isRunning} placeholder="Min"
+              className="h-7 w-24 text-[11px] font-mono bg-surface-overlay border-border" />
+            <Slider
+              value={[parseInt(minPay) || 0, parseInt(maxPay) || 500000]}
+              onValueChange={([lo, hi]) => { setMinPay(String(lo)); setMaxPay(String(hi)); }}
+              min={1000}
+              max={1000000}
+              step={10000}
+              disabled={isRunning}
+              className="flex-1"
+            />
+            <Input value={maxPay} onChange={(e) => setMaxPay(e.target.value)} type="number" min="1" disabled={isRunning} placeholder="Max"
+              className="h-7 w-24 text-[11px] font-mono bg-surface-overlay border-border" />
           </div>
         </div>
       </div>
 
-      {/* Progress */}
+      {/* Progress + stats */}
       {progress && (
-        <div className={`text-[9px] px-2 py-1 rounded font-mono ${
-          phase === "done" ? "bg-success/10 text-success" :
-          phase === "idle" ? "bg-surface-overlay text-text-muted" :
-          "bg-accent/10 text-accent"
+        <div className={`text-[10px] px-2.5 py-1.5 rounded-md font-mono ${
+          phase === "done" ? "bg-success/10 text-success border border-success/20" :
+          phase === "idle" ? "bg-surface-overlay text-text-muted border border-border" :
+          "bg-accent/10 text-accent border border-accent/20"
         }`}>
           {progress}
         </div>
       )}
+      {stats.total > 0 && (
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[9px] font-mono border-success/30" style={{ color: STATUS_COMPLETED }}>
+            {stats.ok} ok
+          </Badge>
+          <Badge variant="outline" className="text-[9px] font-mono border-purple-500/30" style={{ color: STATUS_FAILED }}>
+            {stats.fail} fail
+          </Badge>
+          <span className="text-[9px] font-mono text-text-muted ml-auto tabular-nums">{stats.total}/{paymentRounds}</span>
+        </div>
+      )}
 
-      {/* Action button */}
-      <Button
-        onClick={runSimulation}
-        disabled={phase === "spawning" || phase === "connecting" || phase === "simulating"}
-        size="sm"
-        className="w-full h-7 text-[10px] bg-accent/90 hover:bg-accent text-white font-semibold"
-      >
-        {phase === "spawning" ? "Spawning Nodes..." :
-         phase === "connecting" ? "Opening Channels..." :
-         phase === "simulating" ? "Running Payments..." :
-         phase === "done" ? "Run Again" :
-         "Run Simulation"}
-      </Button>
+      {/* Action buttons */}
+      <div className="flex gap-2">
+        <Button onClick={runSimulation} disabled={isRunning} size="sm"
+          className="flex-1 h-8 text-[11px] bg-accent/90 hover:bg-accent text-white font-semibold">
+          {phase === "spawning" ? "Spawning..." :
+           phase === "connecting" ? "Connecting..." :
+           phase === "simulating" ? "Running..." :
+           phase === "done" ? "Run Again" : "Run Simulation"}
+        </Button>
+        {isRunning && (
+          <Button onClick={() => { cancelRef.current = true; }} variant="outline" size="sm"
+            className="h-8 text-[11px] text-danger border-danger/30 hover:bg-danger/10 font-medium">
+            Stop
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

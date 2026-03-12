@@ -370,7 +370,11 @@ class AgentNode:
             )
 
             raw = await read_message(stream)
-            _, ack = from_wire(raw)
+            msg_type, ack = from_wire(raw)
+            if msg_type == MessageType.HTLC_CANCEL:
+                raise RuntimeError(f"Payment rejected (HTLC cancel): {ack.reason}")
+            if msg_type != MessageType.PAYMENT_ACK:
+                raise RuntimeError(f"Unexpected response type: {msg_type}")
             if ack.status != "accepted":
                 raise RuntimeError(f"Payment rejected: {ack.reason}")
 

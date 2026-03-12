@@ -7,7 +7,7 @@ from typing import Any
 
 import structlog
 
-from agentic_payments.payments.channel import ChannelState, PaymentChannel
+from agentic_payments.payments.channel import ChannelError, ChannelState, PaymentChannel
 from agentic_payments.payments.voucher import SignedVoucher
 from agentic_payments.protocol.messages import PaymentClose, PaymentOpen, PaymentUpdate
 
@@ -165,6 +165,12 @@ class ChannelManager:
             )
         new_nonce = channel.nonce + 1
         new_total = channel.total_paid + amount
+
+        if new_total > channel.total_deposit:
+            raise ChannelError(
+                f"Voucher amount {new_total} exceeds deposit {channel.total_deposit} "
+                f"(total_paid={channel.total_paid}, payment={amount})"
+            )
 
         voucher = SignedVoucher.create(
             channel_id=channel_id,

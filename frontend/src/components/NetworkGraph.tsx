@@ -11,7 +11,6 @@ interface GraphNode extends d3.SimulationNodeDatum {
   label: string;
   type: "agent" | "peer";
   online: boolean;
-  color: string;
   peerId?: string;
   radius: number;
 }
@@ -23,7 +22,6 @@ interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
   label?: string;
   linkIndex?: number;
   linkCount?: number;
-  channelColor?: string;
   channelId?: string;
   isNew?: boolean;
 }
@@ -46,20 +44,16 @@ export interface AnimatingRoute {
   type: "payment" | "channel";
 }
 
-// ── Color Palettes ────────────────────────────────────────
-const AGENT_COLORS = [
-  "#7c6df0", "#34d399", "#f59e0b", "#ec4899",
-  "#06b6d4", "#f97316", "#8b5cf6", "#14b8a6",
-];
+// ── Neutral color scheme ─────────────────────────────────
+const NODE_COLOR = "#8b8fa3";           // neutral grey for all agent nodes
+const NODE_COLOR_OFFLINE = "#3a3a4a";
+const LINK_CHANNEL = "rgba(255,255,255,0.25)";
+const LINK_P2P = "rgba(255,255,255,0.08)";
+const PARTICLE_CHANNEL = "rgba(255,255,255,0.5)";
+const PARTICLE_P2P = "rgba(255,255,255,0.2)";
+const LABEL_CHANNEL = "rgba(255,255,255,0.5)";
 
-const CHANNEL_COLORS = [
-  "#fbbf24", "#60a5fa", "#34d399", "#f472b6",
-  "#a78bfa", "#fb923c", "#2dd4bf", "#e879f9",
-];
-
-function agentColor(i: number) { return AGENT_COLORS[i % AGENT_COLORS.length]; }
 function agentLetter(i: number) { return String.fromCharCode(65 + i); }
-function channelColor(i: number) { return CHANNEL_COLORS[i % CHANNEL_COLORS.length]; }
 
 function linkArc(sx: number, sy: number, tx: number, ty: number, curvature: number): string {
   if (curvature === 0) return `M${sx},${sy}L${tx},${ty}`;
@@ -96,10 +90,10 @@ function curvatureForIndex(i: number, n: number): number {
 }
 
 // ── Constants ────────────────────────────────────────────
-const CHANNEL_PARTICLES = 3;     // particles per channel link
-const P2P_PARTICLES = 2;         // particles per p2p link
-const CHANNEL_SPEED = 2400;      // ms for one full traverse
-const P2P_SPEED = 4000;          // ms for one full traverse (slower, subtler)
+const CHANNEL_PARTICLES = 3;
+const P2P_PARTICLES = 2;
+const CHANNEL_SPEED = 2400;
+const P2P_SPEED = 4000;
 
 // ── Component ─────────────────────────────────────────────
 export default function NetworkGraph({
@@ -124,7 +118,7 @@ export default function NetworkGraph({
   const onInteractionRef = useRef(onInteraction);
   onInteractionRef.current = onInteraction;
 
-  // ── Loading node border animation (action-triggered overlay) ──
+  // ── Loading node border animation ──
   const activeTimersRef = useRef<Map<string, d3.Timer>>(new Map());
   const FILL_DURATION = 1800;
 
@@ -210,7 +204,6 @@ export default function NetworkGraph({
         label: agentLabels ? agentLabels(i) : `Agent ${agentLetter(i)}`,
         type: "agent",
         online: agent.online,
-        color: agentColor(i),
         peerId: pid,
         radius: 26,
         ...(saved ? { x: saved.x, y: saved.y } : {}),
@@ -218,7 +211,6 @@ export default function NetworkGraph({
     });
 
     // Channels
-    let channelIdx = 0;
     agents.forEach((agent) => {
       for (const ch of agent.channels) {
         if (ch.state === "ACTIVE" || ch.state === "OPEN") {
@@ -235,11 +227,9 @@ export default function NetworkGraph({
                 type: "channel",
                 active: ch.state === "ACTIVE",
                 label: ch.channel_id.slice(0, 8),
-                channelColor: channelColor(channelIdx),
                 channelId: ch.channel_id,
                 isNew,
               });
-              channelIdx++;
             }
           }
         }
@@ -275,7 +265,7 @@ export default function NetworkGraph({
       const saved = nodePositions.current.get(peerId);
       n.push({
         id: peerId, label: shortenId(peerId, 4), type: "peer", online: true,
-        color: "#7a7a94", peerId, radius: 6,
+        peerId, radius: 6,
         ...(saved ? { x: saved.x, y: saved.y } : {}),
       });
       l.push({ id: `ext-${peerId.slice(0, 8)}`, source: parentId, target: peerId, type: "p2p", active: true });
@@ -348,27 +338,16 @@ export default function NetworkGraph({
     // --- Defs ---
     const defs = svg.append("defs");
 
-    AGENT_COLORS.forEach((color, i) => {
-      const f = defs.append("filter").attr("id", `glow-${i}`).attr("x", "-60%").attr("y", "-60%").attr("width", "220%").attr("height", "220%");
-      f.append("feGaussianBlur").attr("stdDeviation", "8").attr("result", "blur");
-      f.append("feFlood").attr("flood-color", color).attr("flood-opacity", "0.3");
-      f.append("feComposite").attr("in2", "blur").attr("operator", "in");
-      const m = f.append("feMerge");
-      m.append("feMergeNode");
-      m.append("feMergeNode").attr("in", "SourceGraphic");
-    });
+    // Single subtle glow for agent nodes
+    const glow = defs.append("filter").attr("id", "node-glow").attr("x", "-60%").attr("y", "-60%").attr("width", "220%").attr("height", "220%");
+    glow.append("feGaussianBlur").attr("stdDeviation", "6").attr("result", "blur");
+    glow.append("feFlood").attr("flood-color", NODE_COLOR).attr("flood-opacity", "0.2");
+    glow.append("feComposite").attr("in2", "blur").attr("operator", "in");
+    const gm = glow.append("feMerge");
+    gm.append("feMergeNode");
+    gm.append("feMergeNode").attr("in", "SourceGraphic");
 
-    CHANNEL_COLORS.forEach((color, i) => {
-      const f = defs.append("filter").attr("id", `ch-glow-${i}`).attr("x", "-50%").attr("y", "-50%").attr("width", "200%").attr("height", "200%");
-      f.append("feGaussianBlur").attr("stdDeviation", "4").attr("result", "blur");
-      f.append("feFlood").attr("flood-color", color).attr("flood-opacity", "0.4");
-      f.append("feComposite").attr("in2", "blur").attr("operator", "in");
-      const m = f.append("feMerge");
-      m.append("feMergeNode");
-      m.append("feMergeNode").attr("in", "SourceGraphic");
-    });
-
-    // Particle glow filter (shared)
+    // Particle glow filter
     const pg = defs.append("filter").attr("id", "particle-glow").attr("x", "-150%").attr("y", "-150%").attr("width", "400%").attr("height", "400%");
     pg.append("feGaussianBlur").attr("stdDeviation", "3").attr("result", "blur");
     pg.append("feFlood").attr("flood-color", "white").attr("flood-opacity", "0.5");
@@ -445,11 +424,8 @@ export default function NetworkGraph({
       .join("path")
       .attr("class", "link-main")
       .attr("fill", "none")
-      .attr("stroke", (d) => {
-        if (d.type === "channel") return d.channelColor || "#fbbf24";
-        return "rgba(255,255,255,0.15)";
-      })
-      .attr("stroke-width", (d) => d.type === "channel" ? 2.5 : 1.5)
+      .attr("stroke", (d) => d.type === "channel" ? LINK_CHANNEL : LINK_P2P)
+      .attr("stroke-width", (d) => d.type === "channel" ? 2 : 1)
       .attr("stroke-opacity", (d) => {
         if (d.type !== "channel") return 1;
         return d.isNew ? 0 : 0.7;
@@ -459,15 +435,8 @@ export default function NetworkGraph({
     // Animate new channel links
     linkPath.filter((d) => !!d.isNew && d.type === "channel").each(function(d) {
       const path = d3.select(this);
-      const color = d.channelColor || "#fbbf24";
       path.transition().duration(800).ease(d3.easeCubicOut)
-        .attr("stroke-opacity", 0.7).attr("stroke-width", 2.5);
-      const ci = CHANNEL_COLORS.indexOf(color);
-      if (ci >= 0) {
-        path.attr("filter", `url(#ch-glow-${ci})`);
-        path.transition().delay(200).duration(1200).ease(d3.easeCubicOut)
-          .attr("filter", null as unknown as string);
-      }
+        .attr("stroke-opacity", 0.7).attr("stroke-width", 2);
       d.isNew = false;
     });
 
@@ -477,7 +446,7 @@ export default function NetworkGraph({
       .join("path")
       .attr("class", "link-dash")
       .attr("fill", "none")
-      .attr("stroke", (d) => d.channelColor || "#fbbf24")
+      .attr("stroke", "rgba(255,255,255,0.15)")
       .attr("stroke-width", 1)
       .attr("stroke-dasharray", "4 8")
       .attr("stroke-opacity", 0.3);
@@ -486,10 +455,10 @@ export default function NetworkGraph({
     const hitPaths = linkG.selectAll<SVGPathElement, GraphLink>("path.link-hit");
     hitPaths.on("mouseenter", function(_, d) {
       linkPath.filter((l) => l.id === d.id).transition().duration(120)
-        .attr("stroke-width", 4).attr("stroke-opacity", 1);
+        .attr("stroke-width", 3.5).attr("stroke-opacity", 1).attr("stroke", "rgba(255,255,255,0.5)");
     }).on("mouseleave", function(_, d) {
       linkPath.filter((l) => l.id === d.id).transition().duration(200)
-        .attr("stroke-width", 2.5).attr("stroke-opacity", 0.7);
+        .attr("stroke-width", 2).attr("stroke-opacity", 0.7).attr("stroke", LINK_CHANNEL);
     });
 
     // Link labels
@@ -504,12 +473,12 @@ export default function NetworkGraph({
     linkLabels.append("rect")
       .attr("rx", 4).attr("ry", 4)
       .attr("fill", "rgba(6,6,11,0.9)")
-      .attr("stroke", (d) => (d.channelColor || "#fbbf24") + "40")
+      .attr("stroke", "rgba(255,255,255,0.08)")
       .attr("stroke-width", 0.5);
 
     linkLabels.append("text")
       .text((d) => `${d.label}${d.active ? "" : " (open)"}`)
-      .attr("fill", (d) => d.active ? (d.channelColor || "#fbbf24") : "rgba(255,255,255,0.4)")
+      .attr("fill", LABEL_CHANNEL)
       .attr("fill-opacity", 0.85)
       .attr("font-size", 9)
       .attr("font-family", "JetBrains Mono, monospace")
@@ -527,15 +496,14 @@ export default function NetworkGraph({
       }
     });
 
-    // ── Continuous particle layer (always-on flow animation) ──
+    // ── Continuous particle layer ──
     const particleG = zoomG.append("g").attr("class", "particles").style("pointer-events", "none");
 
-    // Build particle data per link
     type ParticleInfo = {
       link: GraphLink;
-      index: number;       // which particle on this link (0..n-1)
-      count: number;       // total particles on this link
-      speed: number;       // ms for full traverse
+      index: number;
+      count: number;
+      speed: number;
       radius: number;
       color: string;
       opacity: number;
@@ -545,25 +513,17 @@ export default function NetworkGraph({
       if (link.type === "channel") {
         for (let p = 0; p < CHANNEL_PARTICLES; p++) {
           particleData.push({
-            link,
-            index: p,
-            count: CHANNEL_PARTICLES,
-            speed: CHANNEL_SPEED + (p * 200),  // slight speed variation
-            radius: 2.5,
-            color: link.channelColor || "#fbbf24",
-            opacity: 0.85,
+            link, index: p, count: CHANNEL_PARTICLES,
+            speed: CHANNEL_SPEED + (p * 200), radius: 2,
+            color: PARTICLE_CHANNEL, opacity: 0.6,
           });
         }
       } else if (link.type === "p2p") {
         for (let p = 0; p < P2P_PARTICLES; p++) {
           particleData.push({
-            link,
-            index: p,
-            count: P2P_PARTICLES,
-            speed: P2P_SPEED + (p * 600),
-            radius: 1.5,
-            color: "rgba(255,255,255,0.6)",
-            opacity: 0.35,
+            link, index: p, count: P2P_PARTICLES,
+            speed: P2P_SPEED + (p * 600), radius: 1.2,
+            color: PARTICLE_P2P, opacity: 0.25,
           });
         }
       }
@@ -608,29 +568,25 @@ export default function NetworkGraph({
     // Selection ring (hidden by default)
     agentSel.append("circle")
       .attr("r", 34).attr("fill", "none")
-      .attr("stroke", (d) => d.color).attr("stroke-width", 2.5)
+      .attr("stroke", "rgba(255,255,255,0.6)").attr("stroke-width", 2.5)
       .attr("stroke-dasharray", "6 4")
       .attr("opacity", 0).attr("class", "select-ring");
 
     // Breathing ring
     agentSel.filter((d) => d.online).append("circle")
       .attr("r", 34).attr("fill", "none")
-      .attr("stroke", (d) => d.color).attr("stroke-width", 1)
+      .attr("stroke", "rgba(255,255,255,0.3)").attr("stroke-width", 1)
       .attr("opacity", 0.1).attr("class", "pulse-ring");
 
-    // Main circle
+    // Main circle — neutral color for all nodes
     agentSel.append("circle")
       .attr("r", (d) => d.radius)
-      .attr("fill", (d) => d.online ? d.color : "#1a1a25")
+      .attr("fill", (d) => d.online ? NODE_COLOR : NODE_COLOR_OFFLINE)
       .attr("fill-opacity", (d) => d.online ? 0.85 : 0.3)
-      .attr("stroke", (d) => d.color)
-      .attr("stroke-width", 2)
+      .attr("stroke", "rgba(255,255,255,0.2)")
+      .attr("stroke-width", 1.5)
       .attr("stroke-opacity", (d) => d.online ? 0.4 : 0.15)
-      .attr("filter", (d) => {
-        if (!d.online) return null;
-        const idx = AGENT_COLORS.indexOf(d.color);
-        return `url(#glow-${idx >= 0 ? idx : 0})`;
-      })
+      .attr("filter", (d) => d.online ? "url(#node-glow)" : null)
       .attr("class", "node-circle");
 
     // Entry animation for new nodes
@@ -687,17 +643,17 @@ export default function NetworkGraph({
           .attr("stroke-opacity", (l) => {
             const s = (l.source as GraphNode).id, t = (l.target as GraphNode).id;
             const connected = s === d.id || t === d.id;
-            if (l.type === "channel") return connected ? 1 : 0.2;
-            return connected ? 0.3 : 0.08;
+            if (l.type === "channel") return connected ? 1 : 0.15;
+            return connected ? 0.2 : 0.05;
           })
           .attr("stroke-width", (l) => {
             const s = (l.source as GraphNode).id, t = (l.target as GraphNode).id;
-            if (l.type === "channel" && (s === d.id || t === d.id)) return 3.5;
-            return l.type === "channel" ? 2.5 : 1.5;
+            if (l.type === "channel" && (s === d.id || t === d.id)) return 3;
+            return l.type === "channel" ? 2 : 1;
           });
 
         nodeSel.filter((n) => n.id !== d.id).select(".node-circle")
-          .transition().duration(120).attr("fill-opacity", 0.4);
+          .transition().duration(120).attr("fill-opacity", 0.35);
       })
       .on("mouseleave", function(_, d) {
         d3.select(this).select(".node-circle")
@@ -707,8 +663,8 @@ export default function NetworkGraph({
           .transition().duration(250).attr("r", 34).attr("opacity", 0.1);
 
         linkPath.transition().duration(250)
-          .attr("stroke-opacity", (l) => l.type === "channel" ? 0.7 : 0.15)
-          .attr("stroke-width", (l) => l.type === "channel" ? 2.5 : 1.5);
+          .attr("stroke-opacity", (l) => l.type === "channel" ? 0.7 : 0.08)
+          .attr("stroke-width", (l) => l.type === "channel" ? 2 : 1);
 
         nodeSel.select(".node-circle")
           .transition().duration(250).attr("fill-opacity", (n) => (n as GraphNode).online ? 0.85 : 0.3);
@@ -717,7 +673,6 @@ export default function NetworkGraph({
     // Letter inside circle
     agentSel.append("text")
       .text((d) => {
-        // Show short label: strip "Agent " prefix, or first 2 chars of custom name
         const stripped = d.label.replace(/^Agent\s*/i, "");
         return stripped.length <= 3 ? stripped : stripped.slice(0, 2);
       })
@@ -731,24 +686,23 @@ export default function NetworkGraph({
     const peerSel = nodeSel.filter((d) => d.type === "peer");
     peerSel.append("circle")
       .attr("r", (d) => d.radius)
-      .attr("fill", (d) => d.color).attr("fill-opacity", 0.5)
-      .attr("stroke", (d) => d.color).attr("stroke-width", 1).attr("stroke-opacity", 0.3)
+      .attr("fill", "#5a5a6a").attr("fill-opacity", 0.5)
+      .attr("stroke", "#5a5a6a").attr("stroke-width", 1).attr("stroke-opacity", 0.3)
       .attr("class", "node-circle");
     peerSel.append("title").text((d) => d.label);
 
-    // ── Continuous animation timer ──────────────────────────
-    // Runs permanently: breathing rings, dash flow, particle flow
+    // ── Continuous animation timer ──
     const animStartTime = Date.now();
 
     const animate = d3.timer((elapsed) => {
       // Breathing
-      const scale = 1 + 0.08 * Math.sin(elapsed / 1200);
-      const breatheOp = 0.08 + 0.04 * Math.sin(elapsed / 1200);
+      const scale = 1 + 0.06 * Math.sin(elapsed / 1500);
+      const breatheOp = 0.06 + 0.03 * Math.sin(elapsed / 1500);
       agentSel.selectAll(".pulse-ring")
         .attr("r", 34 * scale).attr("opacity", breatheOp);
 
-      // Channel link glow pulse (subtle brightness oscillation)
-      const glowPulse = 0.6 + 0.15 * Math.sin(elapsed / 2000);
+      // Channel link subtle pulse
+      const glowPulse = 0.55 + 0.15 * Math.sin(elapsed / 2500);
       linkPath.filter((l) => l.type === "channel")
         .attr("stroke-opacity", glowPulse);
 
@@ -760,14 +714,10 @@ export default function NetworkGraph({
         if (s.x == null || s.y == null || t.x == null || t.y == null) return;
 
         const curv = curvatureForIndex(d.link.linkIndex || 0, d.link.linkCount || 1);
-
-        // Stagger particles evenly across the path
         const offset = d.index / d.count;
         const param = ((now - animStartTime) / d.speed + offset) % 1;
-
         const pos = quadPoint(s.x, s.y, t.x, t.y, curv, param);
 
-        // Fade at endpoints
         const fadeZone = 0.08;
         let op = d.opacity;
         if (param < fadeZone) op *= param / fadeZone;
@@ -780,7 +730,7 @@ export default function NetworkGraph({
       });
     });
 
-    // --- Tick (simulation layout updates) ---
+    // --- Tick ---
     let dashOffset = 0;
     sim.on("tick", () => {
       const hitPathsSel = linkG.selectAll<SVGPathElement, GraphLink>("path.link-hit");

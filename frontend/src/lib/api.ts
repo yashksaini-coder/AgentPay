@@ -175,6 +175,73 @@ export interface GatedResource {
   payment_type: string;
 }
 
+// ---------- SLA, Pricing, Disputes, Chain types ----------
+
+export interface SLATerms {
+  max_latency_ms: number;
+  min_availability: number;
+  max_error_rate: number;
+  min_throughput: number;
+  penalty_rate: number;
+  measurement_window: number;
+  dispute_threshold: number;
+}
+
+export interface SLAViolation {
+  channel_id: string;
+  violation_type: string;
+  measured_value: number;
+  threshold_value: number;
+  timestamp: number;
+}
+
+export interface SLAChannelStatus {
+  channel_id: string;
+  sla_terms: SLATerms | null;
+  violations: SLAViolation[];
+  compliant: boolean;
+}
+
+export interface PricingQuote {
+  service_type: string;
+  base_price: number;
+  adjusted_price: number;
+  trust_discount: number;
+  congestion_premium: number;
+  multiplier: number;
+}
+
+export interface PricingConfig {
+  trust_discount_factor: number;
+  congestion_premium_factor: number;
+  min_price: number;
+  max_price: number;
+  congestion_threshold: number;
+}
+
+export type DisputeReason = "STALE_VOUCHER" | "SLA_VIOLATION" | "DOUBLE_SPEND" | "UNRESPONSIVE";
+export type DisputeResolution = "PENDING" | "CHALLENGER_WINS" | "RESPONDER_WINS" | "SETTLED";
+
+export interface Dispute {
+  dispute_id: string;
+  channel_id: string;
+  challenger: string;
+  responder: string;
+  reason: DisputeReason;
+  resolution: DisputeResolution;
+  evidence_nonce: number;
+  evidence_amount: number;
+  slash_amount: number;
+  created_at: number;
+  resolved_at: number | null;
+}
+
+export interface ChainInfo {
+  chain_type: string;
+  ethereum?: { rpc_url: string };
+  algorand?: { algod_url: string; app_id: number; network: string };
+}
+
 // ---------- API calls (parameterized by base URL) ----------
 
 export function createApi(base: string = DEFAULT_API) {
@@ -266,6 +333,41 @@ export function createApi(base: string = DEFAULT_API) {
         method: "POST",
         body: JSON.stringify({ path, price, description }),
       }),
+
+    // SLA
+    getSLAViolations: () =>
+      fetchApi<{ violations: SLAViolation[]; count: number }>(base, "/sla/violations"),
+    getSLAChannels: () =>
+      fetchApi<{ channels: SLAChannelStatus[] }>(base, "/sla/channels"),
+    getSLAChannel: (channelId: string) =>
+      fetchApi<SLAChannelStatus>(base, `/sla/channels/${channelId}`),
+
+    // Pricing
+    getPricingQuote: (serviceType: string, peerId?: string) =>
+      fetchApi<{ quote: PricingQuote }>(base, "/pricing/quote", {
+        method: "POST",
+        body: JSON.stringify({ service_type: serviceType, peer_id: peerId }),
+      }),
+    getPricingConfig: () => fetchApi<{ config: PricingConfig }>(base, "/pricing/config"),
+    updatePricingConfig: (config: Partial<PricingConfig>) =>
+      fetchApi<{ config: PricingConfig }>(base, "/pricing/config", {
+        method: "PUT",
+        body: JSON.stringify(config),
+      }),
+
+    // Disputes
+    getDisputes: (pendingOnly?: boolean) =>
+      fetchApi<{ disputes: Dispute[]; count: number }>(base, `/disputes${pendingOnly ? "?pending_only=true" : ""}`),
+    getDispute: (id: string) => fetchApi<{ dispute: Dispute }>(base, `/disputes/${id}`),
+    scanDisputes: () => fetchApi<{ disputes_filed: number }>(base, "/disputes/scan", { method: "POST" }),
+    fileDispute: (channelId: string, reason: DisputeReason) =>
+      fetchApi<{ dispute: Dispute }>(base, `/channels/${channelId}/dispute`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+
+    // Chain info
+    getChainInfo: () => fetchApi<ChainInfo>(base, "/chain"),
   };
 }
 

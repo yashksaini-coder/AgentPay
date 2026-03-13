@@ -10,6 +10,9 @@ import DiscoveryPanel from "@/components/DiscoveryPanel";
 import NegotiationTimeline from "@/components/NegotiationTimeline";
 import ReceiptChain from "@/components/ReceiptChain";
 import PolicyEditor from "@/components/PolicyEditor";
+import SLAPanel from "@/components/SLAPanel";
+import DisputePanel from "@/components/DisputePanel";
+import PricingPanel from "@/components/PricingPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -377,7 +380,7 @@ export default function NetworkPage() {
       <header className="shrink-0 flex items-center justify-between px-4 py-1.5 border-b border-border-subtle z-10">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold tracking-tight text-gradient">AgentPay</h1>
-          <span className="text-[8px] font-mono text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded-md border border-border">libp2p + ETH</span>
+          <span className="text-[8px] font-mono text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded-md border border-border">libp2p + ETH/ALGO</span>
         </div>
         <div className="flex items-center gap-3 text-[9px] font-mono">
           <div className="flex items-center gap-1.5">
@@ -729,20 +732,24 @@ function relativeTime(ts: number): string {
 // ═══════════════════════════════════════════════════════════
 
 function TrustPanel({ api, trustScores }: { api: ReturnType<typeof import("@/lib/api").createApi>; trustScores: Record<string, number> }) {
-  const [section, setSection] = useState<"discovery" | "negotiations" | "receipts" | "policies">("discovery");
-  const sections = ["discovery", "negotiations", "receipts", "policies"] as const;
-  const labels: Record<string, string> = { discovery: "Discover", negotiations: "Negotiate", receipts: "Receipts", policies: "Policy" };
+  type TrustSection = "discovery" | "negotiations" | "receipts" | "policies" | "sla" | "disputes" | "pricing";
+  const [section, setSection] = useState<TrustSection>("discovery");
+  const sections: TrustSection[] = ["discovery", "negotiations", "sla", "disputes", "pricing", "receipts", "policies"];
+  const labels: Record<TrustSection, string> = {
+    discovery: "Discover", negotiations: "Negotiate", sla: "SLA",
+    disputes: "Disputes", pricing: "Pricing", receipts: "Receipts", policies: "Policy",
+  };
 
   return (
     <div className="space-y-2 pt-1 border-t border-border-subtle">
       <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Trust</h3>
-      {/* Sub-tab pill selector */}
-      <div className="flex rounded-md bg-surface-overlay/60 p-0.5">
+      {/* Sub-tab pill selector — scrollable row */}
+      <div className="flex rounded-md bg-surface-overlay/60 p-0.5 overflow-x-auto">
         {sections.map((s) => (
           <button
             key={s}
             onClick={() => setSection(s)}
-            className={`flex-1 px-1 py-1 text-[9px] font-medium rounded transition-colors ${
+            className={`shrink-0 px-1.5 py-1 text-[8px] font-medium rounded transition-colors ${
               section === s ? "bg-surface-hover text-text-primary" : "text-text-muted hover:text-text-secondary"
             }`}
           >
@@ -753,6 +760,9 @@ function TrustPanel({ api, trustScores }: { api: ReturnType<typeof import("@/lib
 
       {section === "discovery" && <DiscoveryPanel api={api} trustScores={trustScores} />}
       {section === "negotiations" && <NegotiationTimeline api={api} />}
+      {section === "sla" && <SLAPanel api={api} />}
+      {section === "disputes" && <DisputePanel api={api} />}
+      {section === "pricing" && <PricingPanel api={api} />}
       {section === "receipts" && <ReceiptChain api={api} />}
       {section === "policies" && <PolicyEditor api={api} />}
     </div>

@@ -63,7 +63,7 @@ These gaps correspond directly to the four ARIA evaluation pillars.
 | Payments | Cumulative vouchers, ECDSA signatures, HTLC multi-hop routing |
 | Settlement | Ethereum (Solidity) + Algorand (ARC-4, box storage, atomic groups) |
 | API | Quart-Trio (~40 REST endpoints) + Next.js 15 dashboard |
-| Testing | 539 tests, ruff lint clean |
+| Testing | 541 tests, ruff lint clean |
 
 ---
 
@@ -164,7 +164,7 @@ The `SLAMonitor` tracks per-channel compliance:
 
 | Metric | Current Value |
 |--------|--------------|
-| Test coverage | 539 tests across 27 files |
+| Test coverage | 541 tests across 27 files |
 | REST API endpoints | ~40 |
 | CLI commands | 30+ across 10 sub-apps |
 | GossipSub topics | 4 (discovery, capabilities, receipts, channels) |
@@ -212,7 +212,7 @@ AgentPay exposes a REST API that any agent framework can integrate:
 - Dual-chain settlement (Ethereum + Algorand)
 - x402 gateway compatibility
 - Next.js dashboard with trust panels
-- 539 tests, lint clean
+- 541 tests, lint clean
 
 ### Planned
 - Persistent storage (PostgreSQL) for production deployments

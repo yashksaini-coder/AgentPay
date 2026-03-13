@@ -102,7 +102,7 @@ AgentPay maps directly to the four ARIA evaluation pillars:
 | REST API | ~40 endpoints on Quart-Trio + Hypercorn |
 | Dashboard | Next.js 15 multi-agent UI with network graph, trust panels, SLA/dispute/pricing panels |
 | CLI | 30+ commands across 10 sub-apps (Typer) |
-| Test Suite | 539 tests across 27 files (pytest-trio) |
+| Test Suite | 541 tests across 27 files (pytest-trio) |
 
 ## Use Cases
 

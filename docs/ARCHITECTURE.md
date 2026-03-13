@@ -118,12 +118,13 @@ The `PeerDiscovery` class polls every 10 seconds, merging all three sources. New
 
 ### 2.4 GossipSub Pubsub
 
-Three topics for coordination:
+Four topics for coordination:
 
 | Topic | Purpose |
 |-------|---------|
 | `/agentic/discovery/1.0.0` | Agent announcements (peer_id, eth_address, listen addrs) |
 | `/agentic/capabilities/1.0.0` | Service advertisements and pricing |
+| `/agentic/channels/1.0.0` | Channel announcements for network routing topology |
 | `/agentic/receipts/1.0.0` | Payment receipts for transparency/auditing |
 
 GossipSub is configured with meshsub protocol versions 1.0.0, 1.1.0, 1.2.0:
@@ -161,6 +162,14 @@ Maximum message size: **1 MB**. The reader calls `_read_exactly()` which loops u
 | `PAYMENT_UPDATE` | 2 | `channel_id`, `nonce`, `amount` (cumulative), `timestamp`, `signature` |
 | `PAYMENT_CLOSE` | 3 | `channel_id`, `final_nonce`, `final_amount`, `cooperative`, `timestamp`, `signature` |
 | `PAYMENT_ACK` | 4 | `channel_id`, `nonce`, `status`, `reason` |
+| `HTLC_PROPOSE` | 5 | `channel_id`, `payment_hash`, `amount`, `timeout`, `hop_count` |
+| `HTLC_FULFILL` | 6 | `channel_id`, `payment_hash`, `preimage` |
+| `HTLC_CANCEL` | 7 | `channel_id`, `payment_hash`, `reason` |
+| `CHANNEL_ANNOUNCE` | 8 | `channel_id`, `peer_a`, `peer_b`, `capacity` |
+| `NEGOTIATE_PROPOSE` | 9 | `negotiation_id`, `service_type`, `proposed_price`, `channel_deposit`, `timeout` |
+| `NEGOTIATE_COUNTER` | 10 | `negotiation_id`, `counter_price` |
+| `NEGOTIATE_ACCEPT` | 11 | `negotiation_id` |
+| `NEGOTIATE_REJECT` | 12 | `negotiation_id`, `reason` |
 | `ERROR` | 15 | `code`, `message` |
 
 Wire format: `{"type": <int>, "data": {<fields>}}`
@@ -383,12 +392,14 @@ sequenceDiagram
 
 ## 7. API Layer
 
-The REST API runs on Quart-Trio (async Quart on the trio event loop) served by Hypercorn. It provides external access to the agent node's state and operations.
+The REST API runs on Quart-Trio (async Quart on the trio event loop) served by Hypercorn. It provides external access to the agent node's state and operations via ~40 endpoints.
+
+**Core endpoints** (original):
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check → `{"status": "ok"}` |
-| `GET` | `/identity` | `peer_id`, `eth_address`, listen addresses |
+| `GET` | `/identity` | `peer_id`, `eth_address`, listen addresses, chain info |
 | `GET` | `/peers` | Discovered peers with addresses and connection status |
 | `GET` | `/channels` | All payment channels with state |
 | `GET` | `/channels/:id` | Single channel by hex ID |
@@ -396,6 +407,23 @@ The REST API runs on Quart-Trio (async Quart on the trio event loop) served by H
 | `POST` | `/channels/:id/close` | Cooperative close |
 | `POST` | `/pay` | Send micropayment voucher → returns `{voucher}` |
 | `GET` | `/balance` | Aggregate balance: `{deposited, paid, remaining}` |
+| `GET` | `/graph` | Network routing graph |
+| `POST` | `/route` | Find multi-hop route to destination |
+| `POST` | `/route-pay` | Multi-hop HTLC payment |
+| `POST` | `/connect` | Connect to peer by multiaddr |
+| `GET` | `/chain` | Chain type and settlement status |
+
+**Extended endpoints** (ARIA subsystems — see full list in [COMMANDS.md](COMMANDS.md)):
+
+| Group | Endpoints | Purpose |
+|-------|-----------|---------|
+| Discovery | `/discovery/agents`, `/discovery/resources` | Agent capability search, Bazaar-compatible listing |
+| Negotiation | `/negotiate`, `/negotiations`, `/negotiations/:id/*` | Service term negotiation with SLA |
+| Trust | `/reputation`, `/reputation/:id`, `/receipts`, `/receipts/:id`, `/policies` | Trust scores, receipt chains, wallet policies |
+| Pricing | `/pricing/quote`, `/pricing/config` | Dynamic price quotes, engine configuration |
+| SLA | `/sla/violations`, `/sla/channels`, `/sla/channels/:id` | SLA compliance monitoring |
+| Disputes | `/disputes`, `/disputes/:id`, `/disputes/scan`, `/channels/:id/dispute` | Dispute detection and resolution |
+| Gateway | `/gateway/resources`, `/gateway/register` | x402-compatible resource gating |
 
 CORS is enabled globally via `Access-Control-Allow-Origin: *` (after_request middleware).
 
@@ -692,15 +720,17 @@ Chain selection is configured via `chain_type: "ethereum" | "algorand"` in setti
 
 ## 22. Diagrams
 
-High-resolution Excalidraw diagrams are available in [`/public/`](../public/):
+Excalidraw diagrams are available in [`/diagrams/`](../diagrams/):
 
-| Diagram | PNG | Source |
-|---------|-----|--------|
-| System Architecture | [`system-architecture.png`](../public/system-architecture.png) | [`diagrams/system-architecture.excalidraw`](../public/diagrams/system-architecture.excalidraw) |
-| Payment Channel Lifecycle | [`Payment-channel-lifecycle.png`](../public/Payment-channel-lifecycle.png) | [`diagrams/payment-flow.excalidraw`](../public/diagrams/payment-flow.excalidraw) |
-| Channel State Machine | [`state-machine.png`](../public/state-machine.png) | [`diagrams/state-machine.excalidraw`](../public/diagrams/state-machine.excalidraw) |
+| Diagram | Source | Description |
+|---------|--------|-------------|
+| System Architecture | [`system-architecture.excalidraw`](../diagrams/system-architecture.excalidraw) | Full system with all subsystems, dual-chain settlement, GossipSub topics |
+| Payment Channel Lifecycle | [`payment-flow.excalidraw`](../diagrams/payment-flow.excalidraw) | 8-step sequence: open, payments, close, settle |
+| Channel State Machine | [`state-machine.excalidraw`](../diagrams/state-machine.excalidraw) | 6-state lifecycle: PROPOSED → ACTIVE → SETTLED |
+| Negotiation + Payment Flow | [`negotiation-flow.excalidraw`](../diagrams/negotiation-flow.excalidraw) | Full flow: discovery → negotiate → open → pay → close with SLA tracking |
+| Trust Architecture | [`trust-architecture.excalidraw`](../diagrams/trust-architecture.excalidraw) | Reputation, SLA, disputes, policies, pricing interactions |
 
-To edit, open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com).
+PNG exports are in [`/public/`](../public/). To edit, open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com).
 
 ---
 
@@ -716,7 +746,7 @@ py-libp2p is built on trio. Trio's structured concurrency model (nurseries) prev
 
 ### Why msgpack over protobuf?
 
-Msgpack is schema-less and needs no code generation. For a protocol with 5 message types that are unlikely to change frequently, the simplicity of `msgpack.packb(asdict(msg))` outweighs protobuf's versioning benefits. If the protocol stabilizes and needs cross-language support, protobuf is worth revisiting.
+Msgpack is schema-less and needs no code generation. For a protocol with 13 message types (payments, HTLCs, negotiations, announcements), the simplicity of `msgpack.packb(asdict(msg))` outweighs protobuf's versioning benefits. Wire validation is handled by `_EXPECTED_FIELDS` checking at deserialization time. If the protocol stabilizes and needs cross-language support, protobuf is worth revisiting.
 
 ### Why in-memory channel state by default?
 

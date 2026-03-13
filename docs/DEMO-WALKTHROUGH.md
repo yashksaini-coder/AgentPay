@@ -195,7 +195,7 @@ uv run agentpay start --port 9100 --ws-port 9101 --api-port 8081 \
 **Duration**: ~1 minute
 
 ```bash
-# All 63 tests
+# All 541 tests
 uv run pytest -v
 
 # Just the integration tests (end-to-end channel lifecycle)
@@ -206,7 +206,7 @@ uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 ```
 
-> **Talking point**: "63 tests covering the protocol codec, channel state machine, voucher cryptography, REST API, and full integration flows. All passing, lint clean."
+> **Talking point**: "541 tests covering the protocol codec, channel state machine, voucher cryptography, REST API, Algorand settlement, SLA monitoring, pricing, disputes, reputation, and full integration flows. All passing, lint clean."
 
 ---
 

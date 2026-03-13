@@ -6,7 +6,7 @@
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776ab?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-539%20passing-brightgreen?style=flat-square&logo=pytest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/tests-541%20passing-brightgreen?style=flat-square&logo=pytest&logoColor=white)]()
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-d7ff64?style=flat-square&logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
 [![libp2p](https://img.shields.io/badge/libp2p-0.6.0-blue?style=flat-square&logo=libp2p&logoColor=white)](https://libp2p.io)
 [![Solidity](https://img.shields.io/badge/solidity-%5E0.8-363636?style=flat-square&logo=solidity&logoColor=white)](https://soliditylang.org)
@@ -289,7 +289,7 @@ curl -X POST http://127.0.0.1:8080/channels/abcdef01.../close
 ## Testing
 
 ```bash
-uv run pytest                       # All 539 tests
+uv run pytest                       # All 541 tests
 uv run pytest -v                    # Verbose output
 uv run pytest tests/test_api.py     # Single test file
 uv run ruff check src/ tests/       # Lint
@@ -317,8 +317,8 @@ uv run ruff format src/ tests/      # Format
 | test_sla.py | 9 | SLA monitoring, violation detection |
 | test_receipts.py | 9 | Signed receipt chains, verification |
 | test_pricing.py | 9 | Dynamic pricing, trust discounts, congestion |
-| test_disputes.py | 8 | Dispute detection, resolution, reputation impact |
-| test_algorand.py | 7 | Algorand wallet, settlement, box decoding |
+| test_disputes.py | 9 | Dispute detection, sender-side guard, resolution, reputation impact |
+| test_algorand.py | 8 | Algorand wallet, mnemonic roundtrip, settlement, box decoding |
 | test_gateway.py | 5 | x402 resource gating, Bazaar format |
 | test_voucher.py | 4 | Signing, verification, serialization |
 | test_sla_negotiation.py | 4 | SLA terms in negotiations |

@@ -68,6 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: foundry-rs/foundry-toolchain@v1
-      - run: forge install --no-commit forge-std
+      - name: Install forge-std
+        run: git clone --depth 1 https://github.com/foundry-rs/forge-std.git lib/forge-std
       - run: forge build
       - run: forge fmt --check

@@ -15,7 +15,7 @@ frontend-lint:
 frontend-build:
 	cd frontend && npm run build
 contracts-build:
-	cd contracts && forge install --no-commit forge-std && forge build
+	cd contracts && ([ -d lib/forge-std ] || git clone --depth 1 https://github.com/foundry-rs/forge-std.git lib/forge-std) && forge build
 contracts-fmt:
 	cd contracts && forge fmt --check
 ci: lint fmt-check typecheck test frontend-lint frontend-build contracts-build contracts-fmt

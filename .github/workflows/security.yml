@@ -23,8 +23,8 @@ jobs:
   python-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv export --no-hashes -o /tmp/requirements.txt
@@ -38,8 +38,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - run: npm ci
@@ -48,8 +48,8 @@ jobs:
   slither:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: crytic/slither-action@v0.4.0
+      - uses: actions/checkout@v6
+      - uses: crytic/slither-action@v0.4.2
         with:
           target: contracts/
           fail-on: high

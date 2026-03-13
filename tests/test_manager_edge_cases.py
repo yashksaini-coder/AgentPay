@@ -77,10 +77,10 @@ class TestChannelCreation:
 
     def test_list_channels_with_filter(self, manager):
         ch1 = manager.create_channel(CID, RECEIVER, 1000, "QmA")
-        ch2 = manager.create_channel(CID_2, RECEIVER, 2000, "QmB")
+        manager.create_channel(CID_2, RECEIVER, 2000, "QmB")
         ch1.accept()
         ch1.activate()
-        # ch2 stays PROPOSED
+        # CID_2 channel stays PROPOSED
         active = manager.list_channels(state=ChannelState.ACTIVE)
         proposed = manager.list_channels(state=ChannelState.PROPOSED)
         assert len(active) == 1
@@ -210,10 +210,6 @@ class TestHandlePaymentUpdate:
     async def test_payment_update_timestamp_too_old(self, manager, wallet_a):
         await self._setup_channel(manager, wallet_a)
         old_ts = int(time.time()) - MAX_TIMESTAMP_SKEW - 100
-        v = SignedVoucher(
-            channel_id=CID, nonce=1, amount=100,
-            timestamp=old_ts, signature=b"\x00" * 65,
-        )
         msg = PaymentUpdate(
             channel_id=CID, nonce=1, amount=100,
             timestamp=old_ts, signature=b"\x00" * 65,
@@ -443,8 +439,10 @@ class TestMultiChannelScenarios:
         mgr = ChannelManager(wallet_a.address)
         ch1 = mgr.create_channel(CID, RECEIVER, 500_000, "QmA")
         ch2 = mgr.create_channel(CID_2, RECEIVER, 300_000, "QmB")
-        ch1.accept(); ch1.activate()
-        ch2.accept(); ch2.activate()
+        ch1.accept()
+        ch1.activate()
+        ch2.accept()
+        ch2.activate()
 
         mock_send = AsyncMock()
         await mgr.send_payment(CID, 100_000, wallet_a.private_key, mock_send)
@@ -459,8 +457,10 @@ class TestMultiChannelScenarios:
         mgr = ChannelManager(wallet_a.address)
         ch1 = mgr.create_channel(CID, RECEIVER, 500_000, "QmA")
         ch2 = mgr.create_channel(CID_2, RECEIVER, 300_000, "QmB")
-        ch1.accept(); ch1.activate()
-        ch2.accept(); ch2.activate()
+        ch1.accept()
+        ch1.activate()
+        ch2.accept()
+        ch2.activate()
 
         ch1.cooperative_close()
         ch1.settle()
@@ -473,11 +473,14 @@ class TestMultiChannelScenarios:
         ch1 = mgr.create_channel(CID, RECEIVER, 500_000, "QmA")
         ch2 = mgr.create_channel(CID_2, RECEIVER, 300_000, "QmB")
         cid3 = bytes([99]) + b"\x00" * 31
-        ch3 = mgr.create_channel(cid3, RECEIVER, 100_000, "QmC")
+        mgr.create_channel(cid3, RECEIVER, 100_000, "QmC")
 
-        ch1.accept(); ch1.activate()  # ACTIVE
-        ch2.accept(); ch2.activate(); ch2.request_close()  # CLOSING
-        # ch3 stays PROPOSED
+        ch1.accept()
+        ch1.activate()  # ACTIVE
+        ch2.accept()
+        ch2.activate()
+        ch2.request_close()  # CLOSING
+        # cid3 channel stays PROPOSED
 
         assert len(mgr.list_channels(ChannelState.ACTIVE)) == 1
         assert len(mgr.list_channels(ChannelState.CLOSING)) == 1

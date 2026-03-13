@@ -21,7 +21,6 @@ from agentic_payments.protocol.codec import (
     encode_message,
 )
 from agentic_payments.protocol.messages import (
-    AckStatus,
     ErrorMessage,
     MessageType,
     PaymentAck,

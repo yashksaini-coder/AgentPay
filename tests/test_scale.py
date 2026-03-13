@@ -20,14 +20,13 @@ These tests exercise:
 
 from __future__ import annotations
 
-import os
 from itertools import combinations
 from unittest.mock import AsyncMock
 
 import pytest
 
 from agentic_payments.chain.wallet import Wallet
-from agentic_payments.payments.channel import ChannelState, PaymentChannel
+from agentic_payments.payments.channel import ChannelState
 from agentic_payments.payments.manager import ChannelManager
 from agentic_payments.payments.voucher import SignedVoucher
 from agentic_payments.protocol.messages import PaymentClose, PaymentOpen, PaymentUpdate

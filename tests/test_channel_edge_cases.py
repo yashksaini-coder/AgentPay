@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from agentic_payments.payments.channel import ChannelError, ChannelState, PaymentChannel
+from agentic_payments.payments.channel import ChannelError, PaymentChannel
 from agentic_payments.payments.voucher import SignedVoucher
 
 

@@ -14,7 +14,6 @@ import pytest
 
 from agentic_payments.api.server import create_app
 from agentic_payments.chain.wallet import Wallet
-from agentic_payments.payments.channel import ChannelState, PaymentChannel
 from agentic_payments.payments.manager import ChannelManager
 
 

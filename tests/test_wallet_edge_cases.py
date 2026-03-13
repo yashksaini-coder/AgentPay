@@ -8,7 +8,6 @@ permissions, signing, and invalid inputs.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from eth_account import Account

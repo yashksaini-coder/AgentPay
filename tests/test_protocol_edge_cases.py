@@ -103,8 +103,10 @@ class TestFromWireStructural:
 class TestPaymentOpenWire:
     def _wire(self, **overrides):
         base = {
-            "channel_id": CID, "sender": SENDER,
-            "receiver": RECEIVER, "total_deposit": 1000,
+            "channel_id": CID,
+            "sender": SENDER,
+            "receiver": RECEIVER,
+            "total_deposit": 1000,
         }
         base.update(overrides)
         return {"type": int(MessageType.PAYMENT_OPEN), "data": base}
@@ -374,8 +376,12 @@ class TestPaymentAckWire:
 class TestWireRoundTrips:
     def test_open_roundtrip_preserves_all_fields(self):
         msg = PaymentOpen(
-            channel_id=CID, sender=SENDER, receiver=RECEIVER,
-            total_deposit=999_999, nonce=0, signature=b"\xab" * 65,
+            channel_id=CID,
+            sender=SENDER,
+            receiver=RECEIVER,
+            total_deposit=999_999,
+            nonce=0,
+            signature=b"\xab" * 65,
         )
         wire = to_wire(MessageType.PAYMENT_OPEN, msg)
         _, restored = from_wire(wire)
@@ -393,8 +399,11 @@ class TestWireRoundTrips:
 
     def test_close_roundtrip(self):
         msg = PaymentClose(
-            channel_id=CID, final_nonce=100, final_amount=999,
-            cooperative=False, signature=b"\x02" * 65,
+            channel_id=CID,
+            final_nonce=100,
+            final_amount=999,
+            cooperative=False,
+            signature=b"\x02" * 65,
         )
         wire = to_wire(MessageType.PAYMENT_CLOSE, msg)
         _, restored = from_wire(wire)

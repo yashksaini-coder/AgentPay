@@ -71,8 +71,11 @@ def test_receipt_store_add_and_get(keypair):
     store = ReceiptStore()
     channel_id = os.urandom(32)
     r = SignedReceipt.create(
-        channel_id=channel_id, nonce=1, amount=100,
-        sender=addr, receiver="0xabc",
+        channel_id=channel_id,
+        nonce=1,
+        amount=100,
+        sender=addr,
+        receiver="0xabc",
         previous_receipt_hash=GENESIS_HASH,
         private_key=privkey,
     )
@@ -88,16 +91,22 @@ def test_receipt_chain_integrity(keypair):
     channel_id = os.urandom(32)
 
     r1 = SignedReceipt.create(
-        channel_id=channel_id, nonce=1, amount=100,
-        sender=addr, receiver="0xabc",
+        channel_id=channel_id,
+        nonce=1,
+        amount=100,
+        sender=addr,
+        receiver="0xabc",
         previous_receipt_hash=GENESIS_HASH,
         private_key=privkey,
     )
     store.add(r1)
 
     r2 = SignedReceipt.create(
-        channel_id=channel_id, nonce=2, amount=200,
-        sender=addr, receiver="0xabc",
+        channel_id=channel_id,
+        nonce=2,
+        amount=200,
+        sender=addr,
+        receiver="0xabc",
         previous_receipt_hash=r1.receipt_hash,
         private_key=privkey,
     )
@@ -112,8 +121,11 @@ def test_receipt_chain_broken(keypair):
     channel_id = os.urandom(32)
 
     r1 = SignedReceipt.create(
-        channel_id=channel_id, nonce=1, amount=100,
-        sender=addr, receiver="0xabc",
+        channel_id=channel_id,
+        nonce=1,
+        amount=100,
+        sender=addr,
+        receiver="0xabc",
         previous_receipt_hash=GENESIS_HASH,
         private_key=privkey,
     )
@@ -121,8 +133,11 @@ def test_receipt_chain_broken(keypair):
 
     # Wrong previous hash
     r2 = SignedReceipt.create(
-        channel_id=channel_id, nonce=2, amount=200,
-        sender=addr, receiver="0xabc",
+        channel_id=channel_id,
+        nonce=2,
+        amount=200,
+        sender=addr,
+        receiver="0xabc",
         previous_receipt_hash=b"\xff" * 32,
         private_key=privkey,
     )
@@ -144,8 +159,11 @@ def test_receipt_store_previous_hash(keypair):
     assert store.get_previous_hash(channel_id) == GENESIS_HASH
 
     r1 = SignedReceipt.create(
-        channel_id=channel_id, nonce=1, amount=100,
-        sender=addr, receiver="0xabc",
+        channel_id=channel_id,
+        nonce=1,
+        amount=100,
+        sender=addr,
+        receiver="0xabc",
         previous_receipt_hash=GENESIS_HASH,
         private_key=privkey,
     )
@@ -157,15 +175,27 @@ def test_receipt_store_list_channels(keypair):
     privkey, addr = keypair
     store = ReceiptStore()
     ch1, ch2 = os.urandom(32), os.urandom(32)
-    store.add(SignedReceipt.create(
-        channel_id=ch1, nonce=1, amount=100,
-        sender=addr, receiver="0xabc",
-        previous_receipt_hash=GENESIS_HASH, private_key=privkey,
-    ))
-    store.add(SignedReceipt.create(
-        channel_id=ch2, nonce=1, amount=200,
-        sender=addr, receiver="0xdef",
-        previous_receipt_hash=GENESIS_HASH, private_key=privkey,
-    ))
+    store.add(
+        SignedReceipt.create(
+            channel_id=ch1,
+            nonce=1,
+            amount=100,
+            sender=addr,
+            receiver="0xabc",
+            previous_receipt_hash=GENESIS_HASH,
+            private_key=privkey,
+        )
+    )
+    store.add(
+        SignedReceipt.create(
+            channel_id=ch2,
+            nonce=1,
+            amount=200,
+            sender=addr,
+            receiver="0xdef",
+            previous_receipt_hash=GENESIS_HASH,
+            private_key=privkey,
+        )
+    )
     channels = store.list_channels()
     assert len(channels) == 2

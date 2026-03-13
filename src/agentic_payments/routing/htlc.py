@@ -154,7 +154,8 @@ class HtlcManager:
     def get_pending_for_channel(self, channel_id: bytes) -> list[PendingHtlc]:
         """Get all pending HTLCs on a specific channel."""
         return [
-            h for h in self._htlcs.values()
+            h
+            for h in self._htlcs.values()
             if h.channel_id == channel_id and h.state == HtlcState.PENDING
         ]
 
@@ -179,7 +180,8 @@ class HtlcManager:
     def cleanup_settled(self) -> int:
         """Remove fulfilled and cancelled HTLCs. Returns count removed."""
         to_remove = [
-            hid for hid, h in self._htlcs.items()
+            hid
+            for hid, h in self._htlcs.items()
             if h.state in (HtlcState.FULFILLED, HtlcState.CANCELLED)
         ]
         for hid in to_remove:

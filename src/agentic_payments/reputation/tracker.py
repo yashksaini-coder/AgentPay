@@ -37,7 +37,12 @@ class PeerReputation:
 
     @property
     def total_interactions(self) -> int:
-        return self.payments_sent + self.payments_received + self.htlcs_fulfilled + self.htlcs_cancelled
+        return (
+            self.payments_sent
+            + self.payments_received
+            + self.htlcs_fulfilled
+            + self.htlcs_cancelled
+        )
 
     @property
     def success_rate(self) -> float:

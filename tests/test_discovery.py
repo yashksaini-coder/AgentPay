@@ -11,6 +11,7 @@ from agentic_payments.discovery.registry import CapabilityRegistry
 
 # ── AgentCapability ─────────────────────────────────────────────
 
+
 def test_capability_to_dict():
     cap = AgentCapability(service_type="llm-inference", price_per_call=1000, description="GPT-4")
     d = cap.to_dict()
@@ -26,6 +27,7 @@ def test_capability_from_dict():
 
 
 # ── AgentAdvertisement ──────────────────────────────────────────
+
 
 def test_advertisement_to_dict():
     ad = AgentAdvertisement(
@@ -65,10 +67,12 @@ def test_advertisement_from_dict():
 
 # ── CapabilityRegistry ──────────────────────────────────────────
 
+
 def test_registry_register_and_search():
     reg = CapabilityRegistry()
     ad = AgentAdvertisement(
-        peer_id="QmA", eth_address="0xa",
+        peer_id="QmA",
+        eth_address="0xa",
         capabilities=[AgentCapability("llm", 100)],
     )
     reg.register(ad)
@@ -79,14 +83,20 @@ def test_registry_register_and_search():
 
 def test_registry_search_by_capability():
     reg = CapabilityRegistry()
-    reg.register(AgentAdvertisement(
-        peer_id="QmA", eth_address="0xa",
-        capabilities=[AgentCapability("llm", 100)],
-    ))
-    reg.register(AgentAdvertisement(
-        peer_id="QmB", eth_address="0xb",
-        capabilities=[AgentCapability("image-gen", 500)],
-    ))
+    reg.register(
+        AgentAdvertisement(
+            peer_id="QmA",
+            eth_address="0xa",
+            capabilities=[AgentCapability("llm", 100)],
+        )
+    )
+    reg.register(
+        AgentAdvertisement(
+            peer_id="QmB",
+            eth_address="0xb",
+            capabilities=[AgentCapability("image-gen", 500)],
+        )
+    )
     results = reg.search("llm")
     assert len(results) == 1
     assert results[0].peer_id == "QmA"
@@ -111,10 +121,13 @@ def test_registry_prune_stale():
 
 def test_registry_bazaar_format():
     reg = CapabilityRegistry()
-    reg.register(AgentAdvertisement(
-        peer_id="QmA", eth_address="0xa",
-        capabilities=[AgentCapability("llm", 100)],
-    ))
+    reg.register(
+        AgentAdvertisement(
+            peer_id="QmA",
+            eth_address="0xa",
+            capabilities=[AgentCapability("llm", 100)],
+        )
+    )
     bazaar = reg.to_bazaar_format()
     assert len(bazaar) == 1
     assert bazaar[0]["provider"]["id"] == "QmA"

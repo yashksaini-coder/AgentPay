@@ -126,7 +126,9 @@ _EVENT_HIGHLIGHTS: dict[str, str] = {
 
 
 def _abbreviate_logger_name(
-    logger: object, method_name: str, event_dict: dict,
+    logger: object,
+    method_name: str,
+    event_dict: dict,
 ) -> dict:
     """Shorten module paths: agentic_payments.node.agent_node → node.agent_node."""
     if "_logger" in event_dict:
@@ -403,7 +405,9 @@ def simulate(
     max_pay: int = typer.Option(500_000, help="Maximum payment amount in wei"),
     concurrency: int = typer.Option(5, help="Max concurrent payments per batch"),
     base_port: int = typer.Option(8080, help="Base API port (agents use base+0, base+1, ...)"),
-    spawn: bool = typer.Option(True, help="Auto-spawn agent processes (requires dev.sh or manual start if false)"),
+    spawn: bool = typer.Option(
+        True, help="Auto-spawn agent processes (requires dev.sh or manual start if false)"
+    ),
 ) -> None:
     """Run a payment simulation across multiple agents (like the UI simulation panel)."""
     import json
@@ -432,7 +436,8 @@ def simulate(
         if data is not None:
             payload = json.dumps(data).encode()
             req = urllib.request.Request(
-                url, data=payload,
+                url,
+                data=payload,
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -485,19 +490,26 @@ def simulate(
             ws_port = 9001 + i * 100
             identity_idx = api_port - 8080
             identity_file = (
-                "identity.key" if identity_idx == 0
-                else f"identity{identity_idx + 1}.key"
+                "identity.key" if identity_idx == 0 else f"identity{identity_idx + 1}.key"
             )
             identity_path = os.path.expanduser(f"~/.agentic-payments/{identity_file}")
 
             proc = subprocess.Popen(
                 [
-                    "uv", "run", "agentpay", "start",
-                    "--port", str(p2p_port),
-                    "--ws-port", str(ws_port),
-                    "--api-port", str(api_port),
-                    "--identity-path", identity_path,
-                    "--log-level", "WARNING",
+                    "uv",
+                    "run",
+                    "agentpay",
+                    "start",
+                    "--port",
+                    str(p2p_port),
+                    "--ws-port",
+                    str(ws_port),
+                    "--api-port",
+                    str(api_port),
+                    "--identity-path",
+                    identity_path,
+                    "--log-level",
+                    "WARNING",
                 ],
                 cwd=str(project_root),
                 stdout=subprocess.DEVNULL,
@@ -525,7 +537,9 @@ def simulate(
     else:
         online = sum(1 for p in ports if probe(p))
         if online < 2:
-            typer.echo(f"Error: Only {online} agents found on ports {ports}. Start agents first.", err=True)
+            typer.echo(
+                f"Error: Only {online} agents found on ports {ports}. Start agents first.", err=True
+            )
             raise typer.Exit(1)
         typer.echo(f"[check] {online}/{agents} agents online\n")
 
@@ -598,11 +612,15 @@ def simulate(
 
         # Open channel
         try:
-            api(s_port, "/channels", {
-                "peer_id": receiver["peer_id"],
-                "receiver": receiver["eth_address"],
-                "deposit": deposit,
-            })
+            api(
+                s_port,
+                "/channels",
+                {
+                    "peer_id": receiver["peer_id"],
+                    "receiver": receiver["eth_address"],
+                    "deposit": deposit,
+                },
+            )
             opened += 1
             typer.echo(f"  [{opened}/{len(pairs)}] Agent {si} → Agent {ri} ({deposit:,} wei)")
         except urllib.error.HTTPError as e:
@@ -646,7 +664,8 @@ def simulate(
             s_port = sender["_port"]
             channels = get_channels(s_port)
             eligible = [
-                c for c in channels
+                c
+                for c in channels
                 if c.get("state") == "ACTIVE"
                 and c.get("sender") == sender["eth_address"]
                 and c.get("remaining_balance", 0) > amount
@@ -673,10 +692,14 @@ def simulate(
                     continue
                 receiver = random.choice(others)
                 try:
-                    api(s_port, "/route-pay", {
-                        "destination": receiver["peer_id"],
-                        "amount": amount,
-                    })
+                    api(
+                        s_port,
+                        "/route-pay",
+                        {
+                            "destination": receiver["peer_id"],
+                            "amount": amount,
+                        },
+                    )
                     ok_count += 1
                     sent = True
                 except Exception:
@@ -715,7 +738,8 @@ def _api_call(api_url: str, path: str, method: str = "GET", data: dict | None = 
     if data is not None:
         payload = json.dumps(data).encode()
         req = urllib.request.Request(
-            url, data=payload,
+            url,
+            data=payload,
             headers={"Content-Type": "application/json"},
             method=method,
         )
@@ -736,6 +760,7 @@ def _api_or_exit(api_url: str, path: str, method: str = "GET", data: dict | None
 
 # ── Discovery commands ──────────────────────────────────────────
 
+
 @discovery_app.command("list")
 def discovery_list(
     capability: str = typer.Option("", help="Filter by capability type"),
@@ -754,7 +779,9 @@ def discovery_list(
         typer.echo(f"\n  Peer: {agent['peer_id']}")
         typer.echo(f"  ETH:  {agent.get('eth_address', 'N/A')}")
         for cap in agent.get("capabilities", []):
-            typer.echo(f"    • {cap['service_type']}  {cap.get('price_per_call', '?')} wei  {cap.get('description', '')}")
+            typer.echo(
+                f"    • {cap['service_type']}  {cap.get('price_per_call', '?')} wei  {cap.get('description', '')}"
+            )
 
 
 @discovery_app.command("resources")
@@ -768,11 +795,14 @@ def discovery_resources(
         typer.echo("No resources available.")
         return
     for r in resources:
-        typer.echo(f"  {r.get('path', r.get('service_type', '?'))}  "
-                    f"{r.get('price', '?')} wei  {r.get('description', '')}")
+        typer.echo(
+            f"  {r.get('path', r.get('service_type', '?'))}  "
+            f"{r.get('price', '?')} wei  {r.get('description', '')}"
+        )
 
 
 # ── Negotiation commands ────────────────────────────────────────
+
 
 @negotiate_app.command("propose")
 def negotiate_propose(
@@ -813,8 +843,10 @@ def negotiate_counter(
 ) -> None:
     """Counter-propose on a negotiation."""
     data = _api_or_exit(
-        api_url, f"/negotiations/{negotiation_id}/counter",
-        method="POST", data={"counter_price": price},
+        api_url,
+        f"/negotiations/{negotiation_id}/counter",
+        method="POST",
+        data={"counter_price": price},
     )
     typer.echo(f"Counter sent. State: {data.get('negotiation', {}).get('state', '?')}")
 
@@ -826,7 +858,9 @@ def negotiate_accept(
 ) -> None:
     """Accept a negotiation."""
     data = _api_or_exit(
-        api_url, f"/negotiations/{negotiation_id}/accept", method="POST",
+        api_url,
+        f"/negotiations/{negotiation_id}/accept",
+        method="POST",
     )
     typer.echo(f"Negotiation accepted. State: {data.get('negotiation', {}).get('state', '?')}")
 
@@ -838,7 +872,9 @@ def negotiate_reject(
 ) -> None:
     """Reject a negotiation."""
     _api_or_exit(
-        api_url, f"/negotiations/{negotiation_id}/reject", method="POST",
+        api_url,
+        f"/negotiations/{negotiation_id}/reject",
+        method="POST",
     )
     typer.echo("Negotiation rejected.")
 
@@ -854,8 +890,10 @@ def negotiate_list(
         typer.echo("No negotiations.")
         return
     for n in negs:
-        typer.echo(f"  {n['negotiation_id'][:16]}…  {n['state']:<12}  "
-                    f"{n.get('service_type', '?')}  {n.get('current_price', '?')} wei")
+        typer.echo(
+            f"  {n['negotiation_id'][:16]}…  {n['state']:<12}  "
+            f"{n.get('service_type', '?')}  {n.get('current_price', '?')} wei"
+        )
 
 
 @negotiate_app.command("show")
@@ -865,11 +903,13 @@ def negotiate_show(
 ) -> None:
     """Show negotiation details."""
     import json
+
     data = _api_or_exit(api_url, f"/negotiations/{negotiation_id}")
     typer.echo(json.dumps(data.get("negotiation", data), indent=2))
 
 
 # ── Reputation commands ─────────────────────────────────────────
+
 
 @reputation_app.command("list")
 def reputation_list(
@@ -883,8 +923,11 @@ def reputation_list(
         return
     for p in peers:
         score = p.get("trust_score", p.get("score", "?"))
-        typer.echo(f"  {p.get('peer_id', '?')[:24]}…  trust={score:.2f}" if isinstance(score, float)
-                    else f"  {p.get('peer_id', '?')[:24]}…  trust={score}")
+        typer.echo(
+            f"  {p.get('peer_id', '?')[:24]}…  trust={score:.2f}"
+            if isinstance(score, float)
+            else f"  {p.get('peer_id', '?')[:24]}…  trust={score}"
+        )
 
 
 @reputation_app.command("show")
@@ -894,11 +937,13 @@ def reputation_show(
 ) -> None:
     """Show detailed reputation for a peer."""
     import json
+
     data = _api_or_exit(api_url, f"/reputation/{peer_id}")
     typer.echo(json.dumps(data.get("reputation", data), indent=2))
 
 
 # ── Policy commands ─────────────────────────────────────────────
+
 
 @policy_app.command("show")
 def policy_show(
@@ -906,6 +951,7 @@ def policy_show(
 ) -> None:
     """Show current wallet spending policies."""
     import json
+
     data = _api_or_exit(api_url, "/policies")
     typer.echo(json.dumps(data.get("policy", data), indent=2))
 
@@ -931,10 +977,12 @@ def policy_set(
     data = _api_or_exit(api_url, "/policies", method="PUT", data=payload)
     typer.echo("Policy updated.")
     import json
+
     typer.echo(json.dumps(data.get("policy", data), indent=2))
 
 
 # ── Receipts commands ───────────────────────────────────────────
+
 
 @receipts_app.command("list")
 def receipts_list(
@@ -947,8 +995,10 @@ def receipts_list(
         typer.echo("No receipts.")
         return
     for r in receipts:
-        typer.echo(f"  {r.get('receipt_id', '?')[:16]}…  ch={r.get('channel_id', '?')[:16]}…  "
-                    f"nonce={r.get('nonce', '?')}  amount={r.get('amount', '?')} wei")
+        typer.echo(
+            f"  {r.get('receipt_id', '?')[:16]}…  ch={r.get('channel_id', '?')[:16]}…  "
+            f"nonce={r.get('nonce', '?')}  amount={r.get('amount', '?')} wei"
+        )
 
 
 @receipts_app.command("show")
@@ -958,11 +1008,13 @@ def receipts_show(
 ) -> None:
     """Show receipt chain for a channel."""
     import json
+
     data = _api_or_exit(api_url, f"/receipts/{channel_id}")
     typer.echo(json.dumps(data.get("receipts", data), indent=2))
 
 
 # ── Gateway commands ────────────────────────────────────────────
+
 
 @gateway_app.command("resources")
 def gateway_resources(
@@ -986,15 +1038,21 @@ def gateway_register(
     api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
 ) -> None:
     """Register a new gated resource."""
-    _api_or_exit(api_url, "/gateway/register", method="POST", data={
-        "path": path,
-        "price": price,
-        "description": description,
-    })
+    _api_or_exit(
+        api_url,
+        "/gateway/register",
+        method="POST",
+        data={
+            "path": path,
+            "price": price,
+            "description": description,
+        },
+    )
     typer.echo(f"Resource registered: {path}")
 
 
 # ── Pricing commands ────────────────────────────────────────────
+
 
 @pricing_app.command("quote")
 def pricing_quote(
@@ -1023,6 +1081,7 @@ def pricing_config(
 ) -> None:
     """View or update pricing configuration."""
     import json
+
     if trust_discount or congestion_premium:
         payload: dict = {}
         if trust_discount:
@@ -1039,6 +1098,7 @@ def pricing_config(
 
 # ── Dispute commands ────────────────────────────────────────────
 
+
 @dispute_app.command("list")
 def dispute_list(
     pending: bool = typer.Option(False, "--pending", help="Show only pending disputes"),
@@ -1052,8 +1112,10 @@ def dispute_list(
         typer.echo("No disputes.")
         return
     for d in disputes:
-        typer.echo(f"  {d.get('dispute_id', '?')[:16]}…  {d.get('reason', '?'):<16}  "
-                    f"{d.get('resolution', '?'):<16}  ch={d.get('channel_id', '?')[:16]}…")
+        typer.echo(
+            f"  {d.get('dispute_id', '?')[:16]}…  {d.get('reason', '?'):<16}  "
+            f"{d.get('resolution', '?'):<16}  ch={d.get('channel_id', '?')[:16]}…"
+        )
 
 
 @dispute_app.command("show")
@@ -1063,6 +1125,7 @@ def dispute_show(
 ) -> None:
     """Show dispute details."""
     import json
+
     data = _api_or_exit(api_url, f"/disputes/{dispute_id}")
     typer.echo(json.dumps(data.get("dispute", data), indent=2))
 
@@ -1070,13 +1133,17 @@ def dispute_show(
 @dispute_app.command("file")
 def dispute_file(
     channel: str = typer.Option(..., "--channel", help="Channel ID (hex)"),
-    reason: str = typer.Option("STALE_VOUCHER", help="Reason: STALE_VOUCHER, SLA_VIOLATION, DOUBLE_SPEND, UNRESPONSIVE"),
+    reason: str = typer.Option(
+        "STALE_VOUCHER", help="Reason: STALE_VOUCHER, SLA_VIOLATION, DOUBLE_SPEND, UNRESPONSIVE"
+    ),
     api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
 ) -> None:
     """File a dispute on a channel."""
     data = _api_or_exit(
-        api_url, f"/channels/{channel}/dispute",
-        method="POST", data={"reason": reason},
+        api_url,
+        f"/channels/{channel}/dispute",
+        method="POST",
+        data={"reason": reason},
     )
     typer.echo(f"Dispute filed: {data.get('dispute', {}).get('dispute_id', 'N/A')}")
 
@@ -1093,6 +1160,7 @@ def dispute_scan(
 
 # ── SLA commands (bonus — exposed under main app) ──────────────
 
+
 @app.command("sla")
 def sla_status(
     channel: str = typer.Option("", "--channel", help="Channel ID (hex) or empty for all"),
@@ -1100,6 +1168,7 @@ def sla_status(
 ) -> None:
     """Show SLA compliance status."""
     import json
+
     if channel:
         data = _api_or_exit(api_url, f"/sla/channels/{channel}")
     else:
@@ -1113,6 +1182,7 @@ def chain_info(
 ) -> None:
     """Show settlement chain information."""
     import json
+
     data = _api_or_exit(api_url, "/chain")
     typer.echo(json.dumps(data, indent=2))
 

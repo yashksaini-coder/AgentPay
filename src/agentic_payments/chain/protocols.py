@@ -22,7 +22,9 @@ class WalletProtocol(Protocol):
 class SettlementProtocol(Protocol):
     """Interface that both Ethereum and Algorand settlement handlers implement."""
 
-    async def open_channel_onchain(self, receiver: str, deposit: int, duration: int = 86400) -> tuple[bytes, str]: ...
+    async def open_channel_onchain(
+        self, receiver: str, deposit: int, duration: int = 86400
+    ) -> tuple[bytes, str]: ...
 
     async def close_channel_onchain(self, channel_id: bytes, *args: Any, **kwargs: Any) -> str: ...
 

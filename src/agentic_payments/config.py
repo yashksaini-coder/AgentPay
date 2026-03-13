@@ -37,7 +37,8 @@ class ChannelConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CHANNEL_")
 
     challenge_period: int = Field(
-        default=3600, ge=60,
+        default=3600,
+        ge=60,
         description="Challenge period in seconds for on-chain settlement (min 60s)",
     )
     auto_settle: bool = Field(
@@ -45,11 +46,13 @@ class ChannelConfig(BaseSettings):
         description="Automatically settle channels on-chain after cooperative close",
     )
     max_pending_htlcs: int = Field(
-        default=50, ge=1,
+        default=50,
+        ge=1,
         description="Maximum concurrent pending HTLCs per channel",
     )
     htlc_timeout_base: int = Field(
-        default=600, ge=120,
+        default=600,
+        ge=120,
         description="Base HTLC timeout in seconds for multi-hop payments",
     )
 
@@ -69,7 +72,8 @@ class EthereumConfig(BaseSettings):
         default="", description="Deployed PaymentChannel contract address"
     )
     token_address: str = Field(
-        default="", description="ERC-20 token address for token-based channels (empty = ETH)",
+        default="",
+        description="ERC-20 token address for token-based channels (empty = ETH)",
     )
 
 
@@ -103,11 +107,13 @@ class DiscoveryConfig(BaseSettings):
         description="List of capabilities: [{service_type, price_per_call, description}]",
     )
     advertisement_interval: int = Field(
-        default=60, ge=10,
+        default=60,
+        ge=10,
         description="How often to re-broadcast capabilities (seconds)",
     )
     stale_threshold: int = Field(
-        default=300, ge=30,
+        default=300,
+        ge=30,
         description="Remove agents not seen for this many seconds",
     )
 
@@ -117,9 +123,13 @@ class PolicyConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="POLICY_")
 
-    max_spend_per_tx: int = Field(default=0, ge=0, description="Max wei per transaction (0=unlimited)")
+    max_spend_per_tx: int = Field(
+        default=0, ge=0, description="Max wei per transaction (0=unlimited)"
+    )
     max_total_spend: int = Field(default=0, ge=0, description="Max total wei spend (0=unlimited)")
-    rate_limit_per_min: int = Field(default=0, ge=0, description="Max payments per minute (0=unlimited)")
+    rate_limit_per_min: int = Field(
+        default=0, ge=0, description="Max payments per minute (0=unlimited)"
+    )
     peer_whitelist: list[str] = Field(default_factory=list, description="Allowed peer IDs")
     peer_blacklist: list[str] = Field(default_factory=list, description="Blocked peer IDs")
 
@@ -162,11 +172,17 @@ class PricingConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="PRICING_")
 
-    trust_discount_factor: float = Field(default=0.3, ge=0, le=1.0, description="Max trust discount (30%)")
-    congestion_premium_factor: float = Field(default=0.5, ge=0, le=2.0, description="Max congestion premium (50%)")
+    trust_discount_factor: float = Field(
+        default=0.3, ge=0, le=1.0, description="Max trust discount (30%)"
+    )
+    congestion_premium_factor: float = Field(
+        default=0.5, ge=0, le=2.0, description="Max congestion premium (50%)"
+    )
     min_price: int = Field(default=0, ge=0, description="Price floor in wei")
     max_price: int = Field(default=0, ge=0, description="Price ceiling in wei (0=unlimited)")
-    congestion_threshold: int = Field(default=20, ge=1, description="Active channels at full congestion")
+    congestion_threshold: int = Field(
+        default=20, ge=1, description="Active channels at full congestion"
+    )
 
 
 class DisputeConfig(BaseSettings):
@@ -174,9 +190,13 @@ class DisputeConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="DISPUTE_")
 
-    auto_challenge: bool = Field(default=True, description="Auto-file challenges for stale vouchers")
+    auto_challenge: bool = Field(
+        default=True, description="Auto-file challenges for stale vouchers"
+    )
     scan_interval: int = Field(default=30, ge=5, description="Channel scan interval in seconds")
-    slash_percentage: float = Field(default=0.10, ge=0, le=1.0, description="Slash percentage of deposit")
+    slash_percentage: float = Field(
+        default=0.10, ge=0, le=1.0, description="Slash percentage of deposit"
+    )
 
 
 class Settings(BaseSettings):

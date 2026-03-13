@@ -150,6 +150,7 @@ class AgentNode:
         # --- Wallet (chain-aware) ---
         if self.config.chain_type == "algorand":
             from agentic_payments.chain.algorand.wallet import AlgorandWallet
+
             keypath = self.config.algorand.keystore_path
             try:
                 self.wallet = AlgorandWallet.from_keyfile(keypath)
@@ -162,14 +163,13 @@ class AgentNode:
             self.wallet = Wallet.generate()
             logger.info("ethereum_wallet_generated", address=self.wallet.address)
 
-        self.channel_manager = ChannelManager(
-            self.wallet.address, policy_engine=self.policy_engine
-        )
+        self.channel_manager = ChannelManager(self.wallet.address, policy_engine=self.policy_engine)
 
         # --- Settlement (chain-aware, optional — requires RPC connectivity) ---
         if self.config.chain_type == "algorand" and self.config.algorand.app_id:
             try:
                 from agentic_payments.chain.algorand.settlement import AlgorandSettlement
+
                 self.settlement = AlgorandSettlement(
                     algod_url=self.config.algorand.algod_url,
                     algod_token=self.config.algorand.algod_token,
@@ -186,6 +186,7 @@ class AgentNode:
             try:
                 from web3 import Web3
                 from agentic_payments.chain.settlement import Settlement
+
                 w3 = Web3(Web3.HTTPProvider(self.config.ethereum.rpc_url))
                 self.settlement = Settlement(
                     w3=w3,
@@ -344,12 +345,14 @@ class AgentNode:
                 # Announce all existing active channels on gossipsub
                 for ch in self.channel_manager.list_channels():
                     if ch.state.name in ("ACTIVE", "OPEN"):
-                        await self.broadcaster.broadcast_channel({
-                            "channel_id": ch.channel_id.hex(),
-                            "peer_a": self.peer_id.to_base58(),
-                            "peer_b": ch.peer_id,
-                            "capacity": ch.total_deposit,
-                        })
+                        await self.broadcaster.broadcast_channel(
+                            {
+                                "channel_id": ch.channel_id.hex(),
+                                "peer_a": self.peer_id.to_base58(),
+                                "peer_b": ch.peer_id,
+                                "capacity": ch.total_deposit,
+                            }
+                        )
 
                 # Run listeners for incoming pubsub messages
                 await self.broadcaster.run(self._nursery)
@@ -498,6 +501,7 @@ class AgentNode:
         # Register SLA monitoring if terms were provided
         if sla_terms is not None:
             from agentic_payments.negotiation.models import SLATerms
+
             if isinstance(sla_terms, dict):
                 sla_terms = SLATerms(**sla_terms)
             self.sla_monitor.register_channel(channel.channel_id.hex(), sla_terms)
@@ -554,7 +558,9 @@ class AgentNode:
             self.reputation_tracker.record_payment_failed(peer_id)
             # Record SLA failure
             self.sla_monitor.record_request(
-                channel_id.hex(), response_time * 1000, success=False,
+                channel_id.hex(),
+                response_time * 1000,
+                success=False,
             )
             raise
 
@@ -564,7 +570,9 @@ class AgentNode:
 
         # Record SLA metrics
         self.sla_monitor.record_request(
-            channel_id.hex(), response_time * 1000, success=True,
+            channel_id.hex(),
+            response_time * 1000,
+            success=True,
         )
 
         # Create receipt
@@ -582,9 +590,7 @@ class AgentNode:
 
         # Broadcast receipt on gossipsub
         if self.broadcaster:
-            await self.broadcaster.publish(
-                TOPIC_PAYMENT_RECEIPTS, receipt.to_dict()
-            )
+            await self.broadcaster.publish(TOPIC_PAYMENT_RECEIPTS, receipt.to_dict())
 
         return voucher
 
@@ -648,12 +654,14 @@ class AgentNode:
             peer_b=channel.peer_id,
             capacity=channel.total_deposit,
         )
-        await self.broadcaster.broadcast_channel({
-            "channel_id": channel.channel_id.hex(),
-            "peer_a": self.peer_id.to_base58(),
-            "peer_b": channel.peer_id,
-            "capacity": channel.total_deposit,
-        })
+        await self.broadcaster.broadcast_channel(
+            {
+                "channel_id": channel.channel_id.hex(),
+                "peer_a": self.peer_id.to_base58(),
+                "peer_b": channel.peer_id,
+                "capacity": channel.total_deposit,
+            }
+        )
 
     async def _on_channel_accepted(self, channel: PaymentChannel) -> None:
         """Called when we accept an incoming channel (receiver side)."""
@@ -686,6 +694,7 @@ class AgentNode:
         """Find a multi-hop route to a destination peer."""
         self._require_started()
         import time
+
         base_timeout = int(time.time()) + 600  # 10 minute base timeout
         return find_route(
             graph=self.network_graph,
@@ -696,9 +705,7 @@ class AgentNode:
             reputation_fn=self.reputation_tracker.get_trust_score,
         )
 
-    async def route_payment(
-        self, destination: str, amount: int
-    ) -> dict:
+    async def route_payment(self, destination: str, amount: int) -> dict:
         """Send a multi-hop payment to a destination peer.
 
         1. Generate preimage + payment_hash
@@ -730,9 +737,15 @@ class AgentNode:
         # Build onion routing data (simplified: plaintext)
         # The final hop entry includes the preimage so the receiver can fulfill.
         import msgpack
+
         if route.hop_count > 1:
             remaining = [
-                {"peer_id": h.peer_id, "channel_id": h.channel_id, "amount": h.amount, "timeout": h.timeout}
+                {
+                    "peer_id": h.peer_id,
+                    "channel_id": h.channel_id,
+                    "amount": h.amount,
+                    "timeout": h.timeout,
+                }
                 for h in route.hops[1:]
             ]
             # Attach preimage to the last hop so final destination can reveal it
@@ -777,9 +790,11 @@ class AgentNode:
                 if verify_preimage(resp.preimage, payment_hash):
                     self.htlc_manager.fulfill(outgoing_htlc.htlc_id, resp.preimage)
                     channel.unlock_htlc(amount)
+
                     # Actually transfer the funds via a voucher
                     async def send_fn(msg):
                         await write_message(stream, to_wire(MessageType.PAYMENT_UPDATE, msg))
+
                     await self.channel_manager.send_payment(
                         channel_id=channel.channel_id,
                         amount=amount,
@@ -835,9 +850,7 @@ class AgentNode:
     # HTLC callbacks (called by protocol handler)
     # ------------------------------------------------------------------
 
-    async def _on_htlc_propose(
-        self, msg: Any, remote_peer: str
-    ) -> tuple[MessageType, Any]:
+    async def _on_htlc_propose(self, msg: Any, remote_peer: str) -> tuple[MessageType, Any]:
         """Handle incoming HTLC proposal — either forward or settle as final hop."""
         from agentic_payments.protocol.messages import HtlcCancel, HtlcFulfill, HtlcPropose
         from agentic_payments.routing.pathfinder import TIMEOUT_DELTA
@@ -845,7 +858,9 @@ class AgentNode:
         # Validate timeout: must be in the future with enough margin
         now = int(time.time())
         if msg.timeout <= now:
-            logger.warning("htlc_expired_on_arrival", htlc_id=msg.htlc_id.hex()[:16], timeout=msg.timeout)
+            logger.warning(
+                "htlc_expired_on_arrival", htlc_id=msg.htlc_id.hex()[:16], timeout=msg.timeout
+            )
             return MessageType.HTLC_CANCEL, HtlcCancel(
                 channel_id=msg.channel_id,
                 htlc_id=msg.htlc_id,
@@ -865,6 +880,7 @@ class AgentNode:
 
         # Decode onion data to check if we're the final hop
         import msgpack
+
         onion_hops = []
         if msg.onion_next:
             try:
@@ -883,7 +899,11 @@ class AgentNode:
             if preimage is None and onion_hops:
                 # Preimage delivered via onion from the sender
                 raw_pre = onion_hops[0].get("preimage") if onion_hops else None
-                if raw_pre and isinstance(raw_pre, bytes) and verify_preimage(raw_pre, msg.payment_hash):
+                if (
+                    raw_pre
+                    and isinstance(raw_pre, bytes)
+                    and verify_preimage(raw_pre, msg.payment_hash)
+                ):
                     preimage = raw_pre
             if preimage is not None:
                 self.htlc_manager.fulfill(msg.htlc_id, preimage)
@@ -949,7 +969,9 @@ class AgentNode:
             downstream_onion = msgpack.packb(remaining_hops[1:], use_bin_type=True)
         elif "preimage" in next_hop:
             # Last forwarding hop — pass preimage to the final destination
-            downstream_onion = msgpack.packb([{"preimage": next_hop["preimage"]}], use_bin_type=True)
+            downstream_onion = msgpack.packb(
+                [{"preimage": next_hop["preimage"]}], use_bin_type=True
+            )
 
         # Create outgoing HTLC
         outgoing_msg = HtlcPropose(
@@ -988,7 +1010,9 @@ class AgentNode:
                     self.htlc_manager.fulfill(outgoing_htlc.htlc_id, resp.preimage)
                     self.htlc_manager.fulfill(incoming.htlc_id, resp.preimage)
                     next_channel.unlock_htlc(msg.amount)
-                    logger.info("htlc_forwarded_fulfilled", payment_hash=msg.payment_hash.hex()[:16])
+                    logger.info(
+                        "htlc_forwarded_fulfilled", payment_hash=msg.payment_hash.hex()[:16]
+                    )
                     return MessageType.HTLC_FULFILL, HtlcFulfill(
                         channel_id=msg.channel_id,
                         htlc_id=msg.htlc_id,
@@ -996,7 +1020,9 @@ class AgentNode:
                     )
                 else:
                     next_channel.unlock_htlc(msg.amount)
-                    self.htlc_manager.cancel(outgoing_htlc.htlc_id, "Invalid preimage from downstream")
+                    self.htlc_manager.cancel(
+                        outgoing_htlc.htlc_id, "Invalid preimage from downstream"
+                    )
                     self.htlc_manager.cancel(incoming.htlc_id, "Invalid preimage from downstream")
                     return MessageType.HTLC_CANCEL, HtlcCancel(
                         channel_id=msg.channel_id,
@@ -1036,16 +1062,12 @@ class AgentNode:
                 reason=f"Forwarding error: {e}",
             )
 
-    async def _on_htlc_fulfill(
-        self, msg: Any, remote_peer: str
-    ) -> tuple[MessageType, Any] | None:
+    async def _on_htlc_fulfill(self, msg: Any, remote_peer: str) -> tuple[MessageType, Any] | None:
         """Handle HTLC fulfill from downstream — propagate preimage upstream."""
         self.reputation_tracker.record_htlc_fulfilled(remote_peer)
         return None
 
-    async def _on_htlc_cancel(
-        self, msg: Any, remote_peer: str
-    ) -> tuple[MessageType, Any] | None:
+    async def _on_htlc_cancel(self, msg: Any, remote_peer: str) -> tuple[MessageType, Any] | None:
         """Handle HTLC cancel from downstream — propagate upstream."""
         self.reputation_tracker.record_htlc_cancelled(remote_peer)
         return None
@@ -1058,9 +1080,7 @@ class AgentNode:
         """Publish our capabilities on the capability topic."""
         if not self.broadcaster:
             return
-        caps = [
-            AgentCapability.from_dict(c) for c in self.config.discovery.capabilities
-        ]
+        caps = [AgentCapability.from_dict(c) for c in self.config.discovery.capabilities]
         ad = AgentAdvertisement(
             peer_id=self.peer_id.to_base58(),
             eth_address=self.wallet.address,
@@ -1069,9 +1089,7 @@ class AgentNode:
         )
         # Register ourselves in local registry
         self.capability_registry.register(ad)
-        await self.broadcaster.publish(
-            TOPIC_AGENT_CAPABILITIES, ad.to_dict()
-        )
+        await self.broadcaster.publish(TOPIC_AGENT_CAPABILITIES, ad.to_dict())
 
     async def _handle_capability_announce(self, data: dict, from_peer: PeerID) -> None:
         """Handle incoming capability advertisement from gossipsub."""
@@ -1190,7 +1208,11 @@ class AgentNode:
             )
 
     async def negotiate(
-        self, peer_id: str, service_type: str, proposed_price: int, channel_deposit: int,
+        self,
+        peer_id: str,
+        service_type: str,
+        proposed_price: int,
+        channel_deposit: int,
         sla_terms: Any = None,
     ) -> dict:
         """Initiate a negotiation with a peer. Auto-opens channel on accept."""

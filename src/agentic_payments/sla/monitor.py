@@ -90,12 +90,16 @@ class SLAMonitor:
     def register_channel(self, channel_id: str, sla_terms: SLATerms) -> None:
         """Start monitoring a channel's SLA compliance."""
         self._channels[channel_id] = ChannelSLAState(
-            channel_id=channel_id, sla_terms=sla_terms,
+            channel_id=channel_id,
+            sla_terms=sla_terms,
         )
         logger.info("sla_monitoring_started", channel=channel_id[:12])
 
     def record_request(
-        self, channel_id: str, latency_ms: float, success: bool,
+        self,
+        channel_id: str,
+        latency_ms: float,
+        success: bool,
     ) -> list[SLAViolation]:
         """Record a request outcome and check for SLA violations."""
         state = self._channels.get(channel_id)
@@ -168,10 +172,7 @@ class SLAMonitor:
 
     def get_non_compliant_channels(self) -> list[str]:
         """Get channel IDs that have exceeded violation threshold."""
-        return [
-            cid for cid, state in self._channels.items()
-            if not state.compliant
-        ]
+        return [cid for cid, state in self._channels.items() if not state.compliant]
 
     def list_monitored(self) -> list[dict]:
         """List all monitored channels with their SLA status."""

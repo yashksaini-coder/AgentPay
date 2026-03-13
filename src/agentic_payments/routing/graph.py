@@ -116,8 +116,7 @@ class NetworkGraph:
         """Remove channels not seen within the TTL. Returns count removed."""
         now = int(time.time())
         stale = [
-            cid for cid, edge in self._edges.items()
-            if now - edge.last_seen > ANNOUNCEMENT_TTL
+            cid for cid, edge in self._edges.items() if now - edge.last_seen > ANNOUNCEMENT_TTL
         ]
         for cid in stale:
             self.remove_channel(cid)

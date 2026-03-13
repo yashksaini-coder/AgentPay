@@ -112,16 +112,26 @@ def register_routes(app: QuartTrio) -> None:
                 "channels": {"channels": ch_list, "count": len(ch_list)},
                 "reputation": {
                     "peers": [r.to_dict() for r in node.reputation_tracker.get_all()],
-                } if hasattr(node, "reputation_tracker") else {},
+                }
+                if hasattr(node, "reputation_tracker")
+                else {},
                 "discovery": {
                     "agents": [a.to_dict() for a in node.capability_registry.search()],
-                } if hasattr(node, "capability_registry") else {},
+                }
+                if hasattr(node, "capability_registry")
+                else {},
                 "negotiations": {
                     "active": [n.to_dict() for n in node.negotiation_manager.list_active()],
-                } if hasattr(node, "negotiation_manager") else {},
+                }
+                if hasattr(node, "negotiation_manager")
+                else {},
                 "disputes": {
-                    "active": [d.to_dict() for d in node.dispute_monitor.list_disputes(pending_only=True)],
-                } if node.dispute_monitor else {},
+                    "active": [
+                        d.to_dict() for d in node.dispute_monitor.list_disputes(pending_only=True)
+                    ],
+                }
+                if node.dispute_monitor
+                else {},
                 "pricing": node.pricing_engine.policy.to_dict() if node.pricing_engine else {},
                 "sla": {
                     "violations": len(node.sla_monitor.get_violations()),
@@ -161,7 +171,9 @@ def register_routes(app: QuartTrio) -> None:
         node = _node()
         channels = [ch.to_dict() for ch in node.channel_manager.list_channels()]
         result = {"channels": channels, "count": len(channels)}
-        _log_api("/channels", 200, (time.monotonic() - t0) * 1000, detail=f"{len(channels)} channels")
+        _log_api(
+            "/channels", 200, (time.monotonic() - t0) * 1000, detail=f"{len(channels)} channels"
+        )
         return result
 
     @app.route("/channels/<channel_id>")
@@ -171,14 +183,29 @@ def register_routes(app: QuartTrio) -> None:
         try:
             cid = bytes.fromhex(channel_id)
         except ValueError:
-            _log_api(f"/channels/{channel_id[:8]}", 400, (time.monotonic() - t0) * 1000, error="invalid hex")
+            _log_api(
+                f"/channels/{channel_id[:8]}",
+                400,
+                (time.monotonic() - t0) * 1000,
+                error="invalid hex",
+            )
             return {"error": "Invalid channel ID: not valid hex"}, 400
         try:
             ch = node.channel_manager.get_channel(cid)
-            _log_api(f"/channels/{channel_id[:8]}", 200, (time.monotonic() - t0) * 1000, detail=ch.state.name)
+            _log_api(
+                f"/channels/{channel_id[:8]}",
+                200,
+                (time.monotonic() - t0) * 1000,
+                detail=ch.state.name,
+            )
             return ch.to_dict(), 200
         except KeyError:
-            _log_api(f"/channels/{channel_id[:8]}", 404, (time.monotonic() - t0) * 1000, error="not found")
+            _log_api(
+                f"/channels/{channel_id[:8]}",
+                404,
+                (time.monotonic() - t0) * 1000,
+                error="not found",
+            )
             return {"error": "Channel not found"}, 404
 
     @app.route("/connect", methods=["POST"])
@@ -195,7 +222,9 @@ def register_routes(app: QuartTrio) -> None:
 
         try:
             await node.connect(maddr)
-            _log_api("/connect", 200, (time.monotonic() - t0) * 1000, method="POST", detail=maddr[-20:])
+            _log_api(
+                "/connect", 200, (time.monotonic() - t0) * 1000, method="POST", detail=maddr[-20:]
+            )
             return {"status": "connected", "multiaddr": maddr}, 200
         except ValueError as e:
             ms = (time.monotonic() - t0) * 1000
@@ -243,7 +272,13 @@ def register_routes(app: QuartTrio) -> None:
                 deposit=deposit_int,
             )
             ms = (time.monotonic() - t0) * 1000
-            _log_api("/channels", 201, ms, method="POST", detail=f"opened {channel.channel_id.hex()[:12]} deposit={deposit_int}")
+            _log_api(
+                "/channels",
+                201,
+                ms,
+                method="POST",
+                detail=f"opened {channel.channel_id.hex()[:12]} deposit={deposit_int}",
+            )
             return {"channel": channel.to_dict()}, 201
         except (ChannelError, ValueError) as e:
             ms = (time.monotonic() - t0) * 1000
@@ -286,7 +321,9 @@ def register_routes(app: QuartTrio) -> None:
         try:
             voucher = await node.pay(channel_id=cid, amount=amount_int)
             ms = (time.monotonic() - t0) * 1000
-            _log_api("/pay", 200, ms, method="POST", detail=f"nonce={voucher.nonce} amount={amount_int}")
+            _log_api(
+                "/pay", 200, ms, method="POST", detail=f"nonce={voucher.nonce} amount={amount_int}"
+            )
             return {"voucher": voucher.to_json_dict()}, 200
         except KeyError:
             ms = (time.monotonic() - t0) * 1000
@@ -315,7 +352,13 @@ def register_routes(app: QuartTrio) -> None:
             await node.close_channel(cid)
             ch = node.channel_manager.get_channel(cid)
             ms = (time.monotonic() - t0) * 1000
-            _log_api(f"/channels/{channel_id[:8]}/close", 200, ms, method="POST", detail=f"settled nonce={ch.nonce}")
+            _log_api(
+                f"/channels/{channel_id[:8]}/close",
+                200,
+                ms,
+                method="POST",
+                detail=f"settled nonce={ch.nonce}",
+            )
             return {"channel": ch.to_dict()}, 200
         except KeyError:
             ms = (time.monotonic() - t0) * 1000
@@ -345,7 +388,12 @@ def register_routes(app: QuartTrio) -> None:
             "total_remaining": total_deposited - total_paid,
             "channel_count": len(channels),
         }
-        _log_api("/balance", 200, (time.monotonic() - t0) * 1000, detail=f"remaining={total_deposited - total_paid}")
+        _log_api(
+            "/balance",
+            200,
+            (time.monotonic() - t0) * 1000,
+            detail=f"remaining={total_deposited - total_paid}",
+        )
         return result
 
     @app.route("/identity")
@@ -358,7 +406,9 @@ def register_routes(app: QuartTrio) -> None:
             "addrs": node.listen_addrs,
             "connected_peers": len(node.get_connected_peers()) if node.host else 0,
         }
-        _log_api("/identity", 200, (time.monotonic() - t0) * 1000, detail=result.get("peer_id", "")[:12])
+        _log_api(
+            "/identity", 200, (time.monotonic() - t0) * 1000, detail=result.get("peer_id", "")[:12]
+        )
         return result
 
     @app.route("/graph")
@@ -366,7 +416,12 @@ def register_routes(app: QuartTrio) -> None:
         t0 = time.monotonic()
         node = _node()
         result = node.network_graph.to_dict()
-        _log_api("/graph", 200, (time.monotonic() - t0) * 1000, detail=f"{result['peer_count']}p/{result['channel_count']}ch")
+        _log_api(
+            "/graph",
+            200,
+            (time.monotonic() - t0) * 1000,
+            detail=f"{result['peer_count']}p/{result['channel_count']}ch",
+        )
         return result
 
     @app.route("/route", methods=["POST"])
@@ -406,9 +461,15 @@ def register_routes(app: QuartTrio) -> None:
         ms = (time.monotonic() - t0) * 1000
         if route is None:
             _log_api("/route", 404, ms, method="POST", error=f"no route to {destination[:12]}")
-            return {"error": "No route found", "destination": destination, "amount": amount_int}, 404
+            return {
+                "error": "No route found",
+                "destination": destination,
+                "amount": amount_int,
+            }, 404
 
-        _log_api("/route", 200, ms, method="POST", detail=f"{route.hop_count} hops to {destination[:12]}")
+        _log_api(
+            "/route", 200, ms, method="POST", detail=f"{route.hop_count} hops to {destination[:12]}"
+        )
         return {"route": route.to_dict()}, 200
 
     @app.route("/route-pay", methods=["POST"])
@@ -448,7 +509,13 @@ def register_routes(app: QuartTrio) -> None:
             result = await node.route_payment(destination, amount_int)
             ms = (time.monotonic() - t0) * 1000
             hops = result.get("route", {}).get("hop_count", "?")
-            _log_api("/route-pay", 200, ms, method="POST", detail=f"amount={amount_int} hops={hops} to {destination[:12]}")
+            _log_api(
+                "/route-pay",
+                200,
+                ms,
+                method="POST",
+                detail=f"amount={amount_int} hops={hops} to {destination[:12]}",
+            )
             return {"payment": result}, 200
         except (RuntimeError, ChannelError, ValueError) as e:
             ms = (time.monotonic() - t0) * 1000
@@ -472,7 +539,9 @@ def register_routes(app: QuartTrio) -> None:
             "agents": [a.to_dict() for a in agents],
             "count": len(agents),
         }
-        _log_api("/discovery/agents", 200, (time.monotonic() - t0) * 1000, detail=f"{len(agents)} agents")
+        _log_api(
+            "/discovery/agents", 200, (time.monotonic() - t0) * 1000, detail=f"{len(agents)} agents"
+        )
         return result
 
     @app.route("/discovery/resources")
@@ -480,7 +549,12 @@ def register_routes(app: QuartTrio) -> None:
         t0 = time.monotonic()
         node = _node()
         bazaar = node.capability_registry.to_bazaar_format()
-        _log_api("/discovery/resources", 200, (time.monotonic() - t0) * 1000, detail=f"{len(bazaar)} providers")
+        _log_api(
+            "/discovery/resources",
+            200,
+            (time.monotonic() - t0) * 1000,
+            detail=f"{len(bazaar)} providers",
+        )
         return {"providers": bazaar, "count": len(bazaar)}
 
     # ── Negotiation endpoints ───────────────────────────────────
@@ -519,7 +593,9 @@ def register_routes(app: QuartTrio) -> None:
                 sla_terms=sla_terms,
             )
             ms = (time.monotonic() - t0) * 1000
-            _log_api("/negotiate", 201, ms, method="POST", detail=f"id={result['negotiation_id'][:12]}")
+            _log_api(
+                "/negotiate", 201, ms, method="POST", detail=f"id={result['negotiation_id'][:12]}"
+            )
             return {"negotiation": result}, 201
         except Exception as e:
             ms = (time.monotonic() - t0) * 1000
@@ -532,7 +608,9 @@ def register_routes(app: QuartTrio) -> None:
         node = _node()
         negs = node.negotiation_manager.list_all()
         result = {"negotiations": [n.to_dict() for n in negs], "count": len(negs)}
-        _log_api("/negotiations", 200, (time.monotonic() - t0) * 1000, detail=f"{len(negs)} negotiations")
+        _log_api(
+            "/negotiations", 200, (time.monotonic() - t0) * 1000, detail=f"{len(negs)} negotiations"
+        )
         return result
 
     @app.route("/negotiations/<negotiation_id>")
@@ -544,7 +622,12 @@ def register_routes(app: QuartTrio) -> None:
             _log_api(f"/negotiations/{negotiation_id[:8]}", 200, (time.monotonic() - t0) * 1000)
             return {"negotiation": neg.to_dict()}, 200
         except KeyError:
-            _log_api(f"/negotiations/{negotiation_id[:8]}", 404, (time.monotonic() - t0) * 1000, error="not found")
+            _log_api(
+                f"/negotiations/{negotiation_id[:8]}",
+                404,
+                (time.monotonic() - t0) * 1000,
+                error="not found",
+            )
             return {"error": "Negotiation not found"}, 404
 
     @app.route("/negotiations/<negotiation_id>/counter", methods=["POST"])
@@ -565,7 +648,9 @@ def register_routes(app: QuartTrio) -> None:
             return {"negotiation": neg.to_dict()}, 200
         except (KeyError, ValueError) as e:
             ms = (time.monotonic() - t0) * 1000
-            _log_api(f"/negotiations/{negotiation_id[:8]}/counter", 400, ms, method="POST", error=str(e))
+            _log_api(
+                f"/negotiations/{negotiation_id[:8]}/counter", 400, ms, method="POST", error=str(e)
+            )
             return {"error": str(e)}, 400
 
     @app.route("/negotiations/<negotiation_id>/accept", methods=["POST"])
@@ -580,7 +665,9 @@ def register_routes(app: QuartTrio) -> None:
             return {"negotiation": neg.to_dict()}, 200
         except (KeyError, ValueError) as e:
             ms = (time.monotonic() - t0) * 1000
-            _log_api(f"/negotiations/{negotiation_id[:8]}/accept", 400, ms, method="POST", error=str(e))
+            _log_api(
+                f"/negotiations/{negotiation_id[:8]}/accept", 400, ms, method="POST", error=str(e)
+            )
             return {"error": str(e)}, 400
 
     @app.route("/negotiations/<negotiation_id>/reject", methods=["POST"])
@@ -595,7 +682,9 @@ def register_routes(app: QuartTrio) -> None:
             return {"negotiation": neg.to_dict()}, 200
         except (KeyError, ValueError) as e:
             ms = (time.monotonic() - t0) * 1000
-            _log_api(f"/negotiations/{negotiation_id[:8]}/reject", 400, ms, method="POST", error=str(e))
+            _log_api(
+                f"/negotiations/{negotiation_id[:8]}/reject", 400, ms, method="POST", error=str(e)
+            )
             return {"error": str(e)}, 400
 
     # ── Policy endpoints ────────────────────────────────────────
@@ -643,7 +732,12 @@ def register_routes(app: QuartTrio) -> None:
         node = _node()
         rep = node.reputation_tracker.get_reputation(peer_id)
         if rep is None:
-            _log_api(f"/reputation/{peer_id[:12]}", 404, (time.monotonic() - t0) * 1000, error="not found")
+            _log_api(
+                f"/reputation/{peer_id[:12]}",
+                404,
+                (time.monotonic() - t0) * 1000,
+                error="not found",
+            )
             return {"error": "No reputation data for peer"}, 404
         _log_api(f"/reputation/{peer_id[:12]}", 200, (time.monotonic() - t0) * 1000)
         return {"reputation": rep.to_dict()}, 200
@@ -666,7 +760,9 @@ def register_routes(app: QuartTrio) -> None:
             ],
             "count": len(channels),
         }
-        _log_api("/receipts", 200, (time.monotonic() - t0) * 1000, detail=f"{len(channels)} channels")
+        _log_api(
+            "/receipts", 200, (time.monotonic() - t0) * 1000, detail=f"{len(channels)} channels"
+        )
         return result
 
     @app.route("/receipts/<channel_id>")
@@ -684,7 +780,12 @@ def register_routes(app: QuartTrio) -> None:
             "count": len(chain),
             "chain_valid": node.receipt_store.verify_chain(cid),
         }
-        _log_api(f"/receipts/{channel_id[:8]}", 200, (time.monotonic() - t0) * 1000, detail=f"{len(chain)} receipts")
+        _log_api(
+            f"/receipts/{channel_id[:8]}",
+            200,
+            (time.monotonic() - t0) * 1000,
+            detail=f"{len(chain)} receipts",
+        )
         return result, 200
 
     # ── Gateway endpoints ───────────────────────────────────────
@@ -742,7 +843,9 @@ def register_routes(app: QuartTrio) -> None:
         try:
             quote = node.pricing_engine.get_quote(int(base_price), peer_id)
             ms = (time.monotonic() - t0) * 1000
-            _log_api("/pricing/quote", 200, ms, method="POST", detail=f"final={quote['final_price']}")
+            _log_api(
+                "/pricing/quote", 200, ms, method="POST", detail=f"final={quote['final_price']}"
+            )
             return {"quote": quote}, 200
         except Exception as e:
             ms = (time.monotonic() - t0) * 1000
@@ -784,7 +887,9 @@ def register_routes(app: QuartTrio) -> None:
         pending_only = request.args.get("pending") == "true"
         disputes = node.dispute_monitor.list_disputes(pending_only=pending_only)
         result = {"disputes": [d.to_dict() for d in disputes], "count": len(disputes)}
-        _log_api("/disputes", 200, (time.monotonic() - t0) * 1000, detail=f"{len(disputes)} disputes")
+        _log_api(
+            "/disputes", 200, (time.monotonic() - t0) * 1000, detail=f"{len(disputes)} disputes"
+        )
         return result
 
     @app.route("/disputes/<dispute_id>")
@@ -796,7 +901,12 @@ def register_routes(app: QuartTrio) -> None:
             _log_api(f"/disputes/{dispute_id[:8]}", 200, (time.monotonic() - t0) * 1000)
             return {"dispute": dispute.to_dict()}, 200
         except KeyError:
-            _log_api(f"/disputes/{dispute_id[:8]}", 404, (time.monotonic() - t0) * 1000, error="not found")
+            _log_api(
+                f"/disputes/{dispute_id[:8]}",
+                404,
+                (time.monotonic() - t0) * 1000,
+                error="not found",
+            )
             return {"error": "Dispute not found"}, 404
 
     @app.route("/disputes/scan", methods=["POST"])
@@ -808,7 +918,13 @@ def register_routes(app: QuartTrio) -> None:
             "new_disputes": [d.to_dict() for d in new_disputes],
             "count": len(new_disputes),
         }
-        _log_api("/disputes/scan", 200, (time.monotonic() - t0) * 1000, method="POST", detail=f"{len(new_disputes)} new")
+        _log_api(
+            "/disputes/scan",
+            200,
+            (time.monotonic() - t0) * 1000,
+            method="POST",
+            detail=f"{len(new_disputes)} new",
+        )
         return result
 
     @app.route("/channels/<channel_id>/dispute", methods=["POST"])
@@ -824,8 +940,10 @@ def register_routes(app: QuartTrio) -> None:
             ch = node.channel_manager.get_channel(cid)
             counterparty = ch.peer_id
             dispute = node.dispute_monitor.file_dispute(
-                channel_id=cid, reason=reason,
-                initiated_by=peer_id_str, counterparty=counterparty,
+                channel_id=cid,
+                reason=reason,
+                initiated_by=peer_id_str,
+                counterparty=counterparty,
             )
             ms = (time.monotonic() - t0) * 1000
             _log_api(f"/channels/{channel_id[:8]}/dispute", 201, ms, method="POST")
@@ -863,7 +981,12 @@ def register_routes(app: QuartTrio) -> None:
             "violations": [v.to_dict() for v in violations[:50]],
             "count": len(violations),
         }
-        _log_api("/sla/violations", 200, (time.monotonic() - t0) * 1000, detail=f"{len(violations)} violations")
+        _log_api(
+            "/sla/violations",
+            200,
+            (time.monotonic() - t0) * 1000,
+            detail=f"{len(violations)} violations",
+        )
         return result
 
     @app.route("/sla/channels")
@@ -881,7 +1004,12 @@ def register_routes(app: QuartTrio) -> None:
         node = _node()
         status = node.sla_monitor.get_status(channel_id)
         if status is None:
-            _log_api(f"/sla/channels/{channel_id[:8]}", 404, (time.monotonic() - t0) * 1000, error="not monitored")
+            _log_api(
+                f"/sla/channels/{channel_id[:8]}",
+                404,
+                (time.monotonic() - t0) * 1000,
+                error="not monitored",
+            )
             return {"error": "Channel not being SLA-monitored"}, 404
         _log_api(f"/sla/channels/{channel_id[:8]}", 200, (time.monotonic() - t0) * 1000)
         return {"sla": status}, 200

@@ -38,94 +38,152 @@ class TestVoucherConstruction:
 
     def test_channel_id_not_bytes(self):
         with pytest.raises(ValueError, match="channel_id must be exactly 32 bytes"):
-            SignedVoucher(channel_id="not-bytes", nonce=1, amount=100,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id="not-bytes",
+                nonce=1,
+                amount=100,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_channel_id_wrong_length(self):
         with pytest.raises(ValueError, match="32 bytes"):
-            SignedVoucher(channel_id=b"\x00" * 10, nonce=1, amount=100,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=b"\x00" * 10,
+                nonce=1,
+                amount=100,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_channel_id_empty(self):
         with pytest.raises(ValueError, match="32 bytes"):
-            SignedVoucher(channel_id=b"", nonce=1, amount=100,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=b"",
+                nonce=1,
+                amount=100,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_nonce_negative(self):
         with pytest.raises(ValueError, match="nonce must be a non-negative"):
-            SignedVoucher(channel_id=CID, nonce=-1, amount=100,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=CID,
+                nonce=-1,
+                amount=100,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_nonce_float(self):
         with pytest.raises(ValueError, match="nonce must be a non-negative"):
-            SignedVoucher(channel_id=CID, nonce=1.5, amount=100,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=CID,
+                nonce=1.5,
+                amount=100,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_nonce_string(self):
         with pytest.raises(ValueError, match="nonce must be a non-negative"):
-            SignedVoucher(channel_id=CID, nonce="1", amount=100,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=CID,
+                nonce="1",
+                amount=100,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_nonce_zero_is_valid(self):
-        v = SignedVoucher(channel_id=CID, nonce=0, amount=0,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+        v = SignedVoucher(
+            channel_id=CID, nonce=0, amount=0, timestamp=int(time.time()), signature=b"\x00" * 65
+        )
         assert v.nonce == 0
 
     def test_amount_negative(self):
         with pytest.raises(ValueError, match="amount must be a non-negative"):
-            SignedVoucher(channel_id=CID, nonce=1, amount=-100,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=CID,
+                nonce=1,
+                amount=-100,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_amount_float(self):
         with pytest.raises(ValueError, match="amount must be a non-negative"):
-            SignedVoucher(channel_id=CID, nonce=1, amount=99.9,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=CID,
+                nonce=1,
+                amount=99.9,
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_amount_string(self):
         with pytest.raises(ValueError, match="amount must be a non-negative"):
-            SignedVoucher(channel_id=CID, nonce=1, amount="100",
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=CID,
+                nonce=1,
+                amount="100",
+                timestamp=int(time.time()),
+                signature=b"\x00" * 65,
+            )
 
     def test_amount_zero_is_valid(self):
-        v = SignedVoucher(channel_id=CID, nonce=0, amount=0,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+        v = SignedVoucher(
+            channel_id=CID, nonce=0, amount=0, timestamp=int(time.time()), signature=b"\x00" * 65
+        )
         assert v.amount == 0
 
     def test_amount_very_large(self):
         """100 ETH in wei."""
-        v = SignedVoucher(channel_id=CID, nonce=1, amount=100 * 10**18,
-                          timestamp=int(time.time()), signature=b"\x00" * 65)
+        v = SignedVoucher(
+            channel_id=CID,
+            nonce=1,
+            amount=100 * 10**18,
+            timestamp=int(time.time()),
+            signature=b"\x00" * 65,
+        )
         assert v.amount == 100 * 10**18
 
     def test_timestamp_zero(self):
         with pytest.raises(ValueError, match="timestamp must be a positive"):
-            SignedVoucher(channel_id=CID, nonce=1, amount=100,
-                          timestamp=0, signature=b"\x00" * 65)
+            SignedVoucher(channel_id=CID, nonce=1, amount=100, timestamp=0, signature=b"\x00" * 65)
 
     def test_timestamp_negative(self):
         with pytest.raises(ValueError, match="timestamp must be a positive"):
-            SignedVoucher(channel_id=CID, nonce=1, amount=100,
-                          timestamp=-1, signature=b"\x00" * 65)
+            SignedVoucher(channel_id=CID, nonce=1, amount=100, timestamp=-1, signature=b"\x00" * 65)
 
     def test_timestamp_string(self):
         with pytest.raises(ValueError, match="timestamp must be a positive"):
-            SignedVoucher(channel_id=CID, nonce=1, amount=100,
-                          timestamp="now", signature=b"\x00" * 65)
+            SignedVoucher(
+                channel_id=CID, nonce=1, amount=100, timestamp="now", signature=b"\x00" * 65
+            )
 
     def test_signature_not_bytes(self):
         with pytest.raises(ValueError, match="signature must be bytes"):
-            SignedVoucher(channel_id=CID, nonce=1, amount=100,
-                          timestamp=int(time.time()), signature="deadbeef")
+            SignedVoucher(
+                channel_id=CID,
+                nonce=1,
+                amount=100,
+                timestamp=int(time.time()),
+                signature="deadbeef",
+            )
 
     def test_signature_none(self):
         with pytest.raises(ValueError, match="signature must be bytes"):
-            SignedVoucher(channel_id=CID, nonce=1, amount=100,
-                          timestamp=int(time.time()), signature=None)
+            SignedVoucher(
+                channel_id=CID, nonce=1, amount=100, timestamp=int(time.time()), signature=None
+            )
 
     def test_signature_empty_bytes_accepted(self):
         """Empty bytes pass construction (validation is at verify time)."""
-        v = SignedVoucher(channel_id=CID, nonce=1, amount=100,
-                          timestamp=int(time.time()), signature=b"")
+        v = SignedVoucher(
+            channel_id=CID, nonce=1, amount=100, timestamp=int(time.time()), signature=b""
+        )
         assert v.signature == b""
 
 
@@ -169,32 +227,44 @@ class TestVoucherSigningVerification:
         v = SignedVoucher.create(CID, 1, 1000, KEY_A)
         # Create a new voucher with different amount but same signature
         tampered = SignedVoucher(
-            channel_id=CID, nonce=1, amount=9999,
-            timestamp=v.timestamp, signature=v.signature,
+            channel_id=CID,
+            nonce=1,
+            amount=9999,
+            timestamp=v.timestamp,
+            signature=v.signature,
         )
         assert not tampered.verify(ADDR_A)
 
     def test_verify_tampered_nonce(self):
         v = SignedVoucher.create(CID, 1, 1000, KEY_A)
         tampered = SignedVoucher(
-            channel_id=CID, nonce=99, amount=1000,
-            timestamp=v.timestamp, signature=v.signature,
+            channel_id=CID,
+            nonce=99,
+            amount=1000,
+            timestamp=v.timestamp,
+            signature=v.signature,
         )
         assert not tampered.verify(ADDR_A)
 
     def test_verify_tampered_channel_id(self):
         v = SignedVoucher.create(CID, 1, 1000, KEY_A)
         tampered = SignedVoucher(
-            channel_id=b"\xff" * 32, nonce=1, amount=1000,
-            timestamp=v.timestamp, signature=v.signature,
+            channel_id=b"\xff" * 32,
+            nonce=1,
+            amount=1000,
+            timestamp=v.timestamp,
+            signature=v.signature,
         )
         assert not tampered.verify(ADDR_A)
 
     def test_verify_tampered_timestamp(self):
         v = SignedVoucher.create(CID, 1, 1000, KEY_A)
         tampered = SignedVoucher(
-            channel_id=CID, nonce=1, amount=1000,
-            timestamp=v.timestamp + 1000, signature=v.signature,
+            channel_id=CID,
+            nonce=1,
+            amount=1000,
+            timestamp=v.timestamp + 1000,
+            signature=v.signature,
         )
         assert not tampered.verify(ADDR_A)
 
@@ -202,23 +272,32 @@ class TestVoucherSigningVerification:
         v = SignedVoucher.create(CID, 1, 1000, KEY_A)
         corrupted_sig = bytes([b ^ 0xFF for b in v.signature])
         tampered = SignedVoucher(
-            channel_id=CID, nonce=1, amount=1000,
-            timestamp=v.timestamp, signature=corrupted_sig,
+            channel_id=CID,
+            nonce=1,
+            amount=1000,
+            timestamp=v.timestamp,
+            signature=corrupted_sig,
         )
         assert not tampered.verify(ADDR_A)
 
     def test_verify_truncated_signature(self):
         v = SignedVoucher.create(CID, 1, 1000, KEY_A)
         tampered = SignedVoucher(
-            channel_id=CID, nonce=1, amount=1000,
-            timestamp=v.timestamp, signature=v.signature[:32],
+            channel_id=CID,
+            nonce=1,
+            amount=1000,
+            timestamp=v.timestamp,
+            signature=v.signature[:32],
         )
         assert not tampered.verify(ADDR_A)
 
     def test_verify_empty_signature_returns_false(self):
         v = SignedVoucher(
-            channel_id=CID, nonce=1, amount=1000,
-            timestamp=int(time.time()), signature=b"",
+            channel_id=CID,
+            nonce=1,
+            amount=1000,
+            timestamp=int(time.time()),
+            signature=b"",
         )
         assert not v.verify(ADDR_A)
 
@@ -230,6 +309,7 @@ class TestVoucherSigningVerification:
     def test_same_params_different_timestamps_different_sigs(self):
         """Due to time-based hashing, signatures differ even for same params."""
         import time as t
+
         v1 = SignedVoucher.create(CID, 1, 100, KEY_A)
         t.sleep(0.01)  # Just ensure different timestamp
         v2 = SignedVoucher.create(CID, 1, 100, KEY_A)
@@ -283,33 +363,58 @@ class TestVoucherSerialization:
 
     def test_from_dict_missing_channel_id(self):
         with pytest.raises(ValueError, match="Missing required voucher field: channel_id"):
-            SignedVoucher.from_dict({
-                "nonce": 1, "amount": 100, "timestamp": int(time.time()), "signature": b"",
-            })
+            SignedVoucher.from_dict(
+                {
+                    "nonce": 1,
+                    "amount": 100,
+                    "timestamp": int(time.time()),
+                    "signature": b"",
+                }
+            )
 
     def test_from_dict_missing_nonce(self):
         with pytest.raises(ValueError, match="Missing required voucher field: nonce"):
-            SignedVoucher.from_dict({
-                "channel_id": CID, "amount": 100, "timestamp": int(time.time()), "signature": b"",
-            })
+            SignedVoucher.from_dict(
+                {
+                    "channel_id": CID,
+                    "amount": 100,
+                    "timestamp": int(time.time()),
+                    "signature": b"",
+                }
+            )
 
     def test_from_dict_missing_amount(self):
         with pytest.raises(ValueError, match="Missing required voucher field: amount"):
-            SignedVoucher.from_dict({
-                "channel_id": CID, "nonce": 1, "timestamp": int(time.time()), "signature": b"",
-            })
+            SignedVoucher.from_dict(
+                {
+                    "channel_id": CID,
+                    "nonce": 1,
+                    "timestamp": int(time.time()),
+                    "signature": b"",
+                }
+            )
 
     def test_from_dict_missing_timestamp(self):
         with pytest.raises(ValueError, match="Missing required voucher field: timestamp"):
-            SignedVoucher.from_dict({
-                "channel_id": CID, "nonce": 1, "amount": 100, "signature": b"",
-            })
+            SignedVoucher.from_dict(
+                {
+                    "channel_id": CID,
+                    "nonce": 1,
+                    "amount": 100,
+                    "signature": b"",
+                }
+            )
 
     def test_from_dict_missing_signature(self):
         with pytest.raises(ValueError, match="Missing required voucher field: signature"):
-            SignedVoucher.from_dict({
-                "channel_id": CID, "nonce": 1, "amount": 100, "timestamp": int(time.time()),
-            })
+            SignedVoucher.from_dict(
+                {
+                    "channel_id": CID,
+                    "nonce": 1,
+                    "amount": 100,
+                    "timestamp": int(time.time()),
+                }
+            )
 
     def test_from_dict_empty_dict(self):
         with pytest.raises(ValueError, match="Missing required"):

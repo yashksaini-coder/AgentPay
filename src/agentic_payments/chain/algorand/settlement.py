@@ -17,6 +17,7 @@ logger = structlog.get_logger(__name__)
 try:
     from algosdk.v2client import algod, indexer
     from algosdk import transaction, encoding
+
     HAS_ALGOSDK = True
 except ImportError:
     HAS_ALGOSDK = False
@@ -145,8 +146,7 @@ class AlgorandSettlement:
         self.app_id = app_id
         self.wallet = wallet
         self.indexer_client = (
-            indexer.IndexerClient(indexer_token, indexer_url)
-            if indexer_url else None
+            indexer.IndexerClient(indexer_token, indexer_url) if indexer_url else None
         )
         logger.info(
             "algorand_settlement_init",
@@ -310,6 +310,7 @@ class AlgorandSettlement:
             box = self.client.application_box_by_name(self.app_id, channel_id)
             # Box value is base64-encoded in the response
             import base64
+
             raw_value = base64.b64decode(box.get("value", ""))
             decoded = _decode_channel_box(raw_value)
             decoded["channel_id"] = channel_id.hex()

@@ -323,6 +323,7 @@ class TestHtlcManager:
 class TestChannelHtlcLocking:
     def _make_channel(self):
         from agentic_payments.payments.channel import PaymentChannel
+
         ch = PaymentChannel(
             channel_id=os.urandom(32),
             sender="0x" + "a" * 40,
@@ -344,12 +345,14 @@ class TestChannelHtlcLocking:
 
     def test_lock_exceeds_balance(self):
         from agentic_payments.payments.channel import ChannelError
+
         ch = self._make_channel()
         with pytest.raises(ChannelError, match="Insufficient balance"):
             ch.lock_htlc(20000)
 
     def test_lock_not_active(self):
         from agentic_payments.payments.channel import ChannelError, PaymentChannel
+
         ch = PaymentChannel(
             channel_id=os.urandom(32),
             sender="0x" + "a" * 40,
@@ -371,6 +374,7 @@ class TestNewMessageTypes:
             from_wire,
             to_wire,
         )
+
         msg = HtlcPropose(
             channel_id=os.urandom(32),
             payment_hash=os.urandom(32),
@@ -390,6 +394,7 @@ class TestNewMessageTypes:
             from_wire,
             to_wire,
         )
+
         msg = HtlcFulfill(
             channel_id=os.urandom(32),
             htlc_id=os.urandom(16),
@@ -407,6 +412,7 @@ class TestNewMessageTypes:
             from_wire,
             to_wire,
         )
+
         msg = HtlcCancel(
             channel_id=os.urandom(32),
             htlc_id=os.urandom(16),
@@ -424,6 +430,7 @@ class TestNewMessageTypes:
             from_wire,
             to_wire,
         )
+
         msg = ChannelAnnounce(
             channel_id=os.urandom(32),
             peer_a="QmPeerA",

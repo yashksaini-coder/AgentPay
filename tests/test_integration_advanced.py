@@ -42,7 +42,9 @@ class TestTwoPartyFlow:
 
         # B receives open request
         open_msg = PaymentOpen(
-            channel_id=cid, sender=wa.address, receiver=wb.address,
+            channel_id=cid,
+            sender=wa.address,
+            receiver=wb.address,
             total_deposit=1_000_000,
         )
         ch_b = await mgr_b.handle_open_request(open_msg, "QmA")
@@ -55,8 +57,11 @@ class TestTwoPartyFlow:
 
             # B receives each update
             update = PaymentUpdate(
-                channel_id=cid, nonce=voucher.nonce, amount=voucher.amount,
-                timestamp=voucher.timestamp, signature=voucher.signature,
+                channel_id=cid,
+                nonce=voucher.nonce,
+                amount=voucher.amount,
+                timestamp=voucher.timestamp,
+                signature=voucher.signature,
             )
             await mgr_b.handle_payment_update(update)
 
@@ -68,7 +73,10 @@ class TestTwoPartyFlow:
 
         # Cooperative close
         close_msg = PaymentClose(
-            channel_id=cid, final_nonce=5, final_amount=500_000, cooperative=True,
+            channel_id=cid,
+            final_nonce=5,
+            final_amount=500_000,
+            cooperative=True,
         )
         await mgr_b.handle_close_request(close_msg)
         assert mgr_b.get_channel(cid).state == ChannelState.CLOSING
@@ -88,7 +96,9 @@ class TestTwoPartyFlow:
 
         # B opens channel with A as sender
         open_msg = PaymentOpen(
-            channel_id=cid, sender=wa.address, receiver=wb.address,
+            channel_id=cid,
+            sender=wa.address,
+            receiver=wb.address,
             total_deposit=1_000_000,
         )
         await mgr_b.handle_open_request(open_msg, "QmA")
@@ -96,8 +106,11 @@ class TestTwoPartyFlow:
         # Attacker signs the voucher (not A)
         v = SignedVoucher.create(cid, 1, 100_000, attacker.private_key)
         update = PaymentUpdate(
-            channel_id=cid, nonce=v.nonce, amount=v.amount,
-            timestamp=v.timestamp, signature=v.signature,
+            channel_id=cid,
+            nonce=v.nonce,
+            amount=v.amount,
+            timestamp=v.timestamp,
+            signature=v.signature,
         )
         with pytest.raises(ValueError, match="Invalid voucher signature"):
             await mgr_b.handle_payment_update(update)
@@ -225,8 +238,10 @@ class TestDisputeScenarios:
         )
         cid = bytes(range(32))
         ch = PaymentChannel(
-            channel_id=cid, sender=w.address,
-            receiver="0x" + "ab" * 20, total_deposit=1_000_000,
+            channel_id=cid,
+            sender=w.address,
+            receiver="0x" + "ab" * 20,
+            total_deposit=1_000_000,
         )
         ch.accept()
         ch.activate()

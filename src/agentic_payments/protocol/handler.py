@@ -236,14 +236,13 @@ class PaymentProtocolHandler:
     ) -> tuple[MessageType, Any] | None:
         """Handle an incoming HTLC proposal (multi-hop forwarding)."""
         if self._on_htlc_propose is None:
-            return MessageType.ERROR, ErrorMessage(
-                code=2, message="HTLC routing not supported"
-            )
+            return MessageType.ERROR, ErrorMessage(code=2, message="HTLC routing not supported")
         try:
             return await self._on_htlc_propose(msg, remote_peer)
         except Exception:
             logger.exception("htlc_propose_error", remote_peer=remote_peer)
             from agentic_payments.protocol.messages import HtlcCancel
+
             return MessageType.HTLC_CANCEL, HtlcCancel(
                 channel_id=msg.channel_id,
                 htlc_id=msg.htlc_id,
@@ -279,13 +278,9 @@ class PaymentProtocolHandler:
     ) -> tuple[MessageType, Any] | None:
         """Handle a negotiation message via callback."""
         if callback is None:
-            return MessageType.ERROR, ErrorMessage(
-                code=3, message="Negotiation not supported"
-            )
+            return MessageType.ERROR, ErrorMessage(code=3, message="Negotiation not supported")
         try:
             return await callback(msg, remote_peer)
         except Exception:
             logger.exception("negotiate_handler_error", remote_peer=remote_peer)
-            return MessageType.ERROR, ErrorMessage(
-                code=4, message="Negotiation handler error"
-            )
+            return MessageType.ERROR, ErrorMessage(code=4, message="Negotiation handler error")

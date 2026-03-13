@@ -131,10 +131,12 @@ class Settlement:
             voucher.nonce,
             voucher.timestamp,
             voucher.signature,
-        ).build_transaction({
-            "from": self.wallet.address,
-            "nonce": tx_nonce,
-        })
+        ).build_transaction(
+            {
+                "from": self.wallet.address,
+                "nonce": tx_nonce,
+            }
+        )
         signed_tx = self.wallet.sign_transaction(tx)
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
@@ -157,10 +159,12 @@ class Settlement:
         tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
         tx = self.contract.functions.withdraw(
             channel_id,
-        ).build_transaction({
-            "from": self.wallet.address,
-            "nonce": tx_nonce,
-        })
+        ).build_transaction(
+            {
+                "from": self.wallet.address,
+                "nonce": tx_nonce,
+            }
+        )
         signed_tx = self.wallet.sign_transaction(tx)
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(

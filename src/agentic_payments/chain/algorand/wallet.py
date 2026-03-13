@@ -11,6 +11,7 @@ logger = structlog.get_logger(__name__)
 
 try:
     from algosdk import account, mnemonic
+
     HAS_ALGOSDK = True
 except ImportError:
     HAS_ALGOSDK = False
@@ -105,11 +106,13 @@ class AlgorandWallet:
         # Use nacl/signing if available, otherwise fall back to algosdk
         try:
             from nacl.signing import SigningKey
+
             signing_key = SigningKey(raw_key[:32])
             signed = signing_key.sign(data)
             return signed.signature
         except ImportError:
             # Fallback: sign a transaction containing the data hash
             import hashlib
+
             logger.warning("nacl_not_available", msg="Using algosdk fallback for signing")
             return hashlib.sha256(data + raw_key[:32]).digest()

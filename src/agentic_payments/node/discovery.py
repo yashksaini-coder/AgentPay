@@ -90,9 +90,7 @@ class PeerDiscovery:
                     continue
 
                 # Add to peerstore so the host knows how to reach this peer
-                self.host.get_peerstore().add_addrs(
-                    peer_info.peer_id, peer_info.addrs, 3600
-                )
+                self.host.get_peerstore().add_addrs(peer_info.peer_id, peer_info.addrs, 3600)
 
                 await self.host.connect(peer_info)
                 self._bootstrap_connected.add(pid_str)
@@ -130,9 +128,7 @@ class PeerDiscovery:
                 if pid_str == self.host.get_id().to_base58():
                     continue
                 if pid_str not in connected_pids:
-                    self.host.get_peerstore().add_addrs(
-                        peer_info.peer_id, peer_info.addrs, 3600
-                    )
+                    self.host.get_peerstore().add_addrs(peer_info.peer_id, peer_info.addrs, 3600)
                     await self.host.connect(peer_info)
                     logger.info("bootstrap_peer_reconnected", peer_id=pid_str)
             except Exception:

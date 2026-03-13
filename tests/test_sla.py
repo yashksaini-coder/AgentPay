@@ -100,7 +100,9 @@ def test_get_non_compliant_channels():
 def test_window_reset():
     mon = SLAMonitor()
     # measurement_window=1 second so it expires quickly
-    mon.register_channel("ch-001", _make_terms(max_error_rate=0.1, max_latency_ms=0, measurement_window=1))
+    mon.register_channel(
+        "ch-001", _make_terms(max_error_rate=0.1, max_latency_ms=0, measurement_window=1)
+    )
     # Record an error → error_rate = 1.0
     mon.record_request("ch-001", latency_ms=50.0, success=False)
     status_before = mon.get_status("ch-001")

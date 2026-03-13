@@ -135,9 +135,7 @@ def _find_route_weighted(
 
     # (cost, counter, current_peer, path_so_far)
     counter = 0
-    heap: list[tuple[float, int, str, list[tuple[str, ChannelEdge]]]] = [
-        (0.0, counter, source, [])
-    ]
+    heap: list[tuple[float, int, str, list[tuple[str, ChannelEdge]]]] = [(0.0, counter, source, [])]
     best_cost: dict[str, float] = {source: 0.0}
 
     while heap:
@@ -181,12 +179,14 @@ def _build_route(
     hops = []
     for i, (peer_id, edge) in enumerate(path):
         timeout = base_timeout - (i * TIMEOUT_DELTA)
-        hops.append(RouteHop(
-            peer_id=peer_id,
-            channel_id=edge.channel_id,
-            amount=amount,
-            timeout=timeout,
-        ))
+        hops.append(
+            RouteHop(
+                peer_id=peer_id,
+                channel_id=edge.channel_id,
+                amount=amount,
+                timeout=timeout,
+            )
+        )
 
     return Route(
         hops=hops,

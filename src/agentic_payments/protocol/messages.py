@@ -212,17 +212,30 @@ _EXPECTED_FIELDS: dict[MessageType, set[str]] = {
     },
     MessageType.PAYMENT_ACK: {"channel_id", "nonce", "status", "reason"},
     MessageType.HTLC_PROPOSE: {
-        "channel_id", "payment_hash", "amount", "timeout",
-        "onion_next", "htlc_id", "timestamp",
+        "channel_id",
+        "payment_hash",
+        "amount",
+        "timeout",
+        "onion_next",
+        "htlc_id",
+        "timestamp",
     },
     MessageType.HTLC_FULFILL: {"channel_id", "htlc_id", "preimage", "timestamp"},
     MessageType.HTLC_CANCEL: {"channel_id", "htlc_id", "reason", "timestamp"},
     MessageType.CHANNEL_ANNOUNCE: {
-        "channel_id", "peer_a", "peer_b", "capacity", "timestamp",
+        "channel_id",
+        "peer_a",
+        "peer_b",
+        "capacity",
+        "timestamp",
     },
     MessageType.NEGOTIATE_PROPOSE: {
-        "negotiation_id", "service_type", "proposed_price",
-        "channel_deposit", "timeout", "timestamp",
+        "negotiation_id",
+        "service_type",
+        "proposed_price",
+        "channel_deposit",
+        "timeout",
+        "timestamp",
     },
     MessageType.NEGOTIATE_COUNTER: {"negotiation_id", "counter_price", "timestamp"},
     MessageType.NEGOTIATE_ACCEPT: {"negotiation_id", "timestamp"},
@@ -319,7 +332,13 @@ def _validate_wire_data(msg_type: MessageType, data: dict[str, Any]) -> dict[str
             raise ValueError("capacity must be a positive integer")
 
     elif msg_type == MessageType.NEGOTIATE_PROPOSE:
-        for req in ("negotiation_id", "service_type", "proposed_price", "channel_deposit", "timeout"):
+        for req in (
+            "negotiation_id",
+            "service_type",
+            "proposed_price",
+            "channel_deposit",
+            "timeout",
+        ):
             if req not in filtered:
                 raise ValueError(f"Missing required field: {req}")
         if not isinstance(filtered["proposed_price"], int) or filtered["proposed_price"] <= 0:

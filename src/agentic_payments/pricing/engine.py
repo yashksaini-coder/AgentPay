@@ -104,7 +104,9 @@ class PricingEngine:
             "trust_score": round(trust_score, 4),
             "congestion_ratio": round(congestion, 4),
             "trust_discount_pct": round(self.policy.trust_discount_factor * trust_score * 100, 1),
-            "congestion_premium_pct": round(self.policy.congestion_premium_factor * congestion * 100, 1),
+            "congestion_premium_pct": round(
+                self.policy.congestion_premium_factor * congestion * 100, 1
+            ),
             "policy": self.policy.to_dict(),
         }
 

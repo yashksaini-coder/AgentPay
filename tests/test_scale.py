@@ -85,7 +85,10 @@ class TestScaleUnidirectional:
 
             # Sender side: create + activate
             ch_s = sender.manager.create_channel(
-                cid, receiver.wallet.address, deposit, f"QmPeer{j}",
+                cid,
+                receiver.wallet.address,
+                deposit,
+                f"QmPeer{j}",
             )
             ch_s.accept()
             ch_s.activate()
@@ -118,7 +121,10 @@ class TestScaleUnidirectional:
 
             for p in range(num_payments):
                 voucher = await sender.manager.send_payment(
-                    cid, payment_amount, sender.wallet.private_key, mock_send,
+                    cid,
+                    payment_amount,
+                    sender.wallet.private_key,
+                    mock_send,
                 )
 
                 # Forward to receiver
@@ -170,8 +176,10 @@ class TestScaleUnidirectional:
             ch_s.activate()
 
             open_msg = PaymentOpen(
-                channel_id=cid, sender=s.wallet.address,
-                receiver=r.wallet.address, total_deposit=deposit,
+                channel_id=cid,
+                sender=s.wallet.address,
+                receiver=r.wallet.address,
+                total_deposit=deposit,
             )
             await r.manager.handle_open_request(open_msg, f"Qm{i}")
 
@@ -181,11 +189,17 @@ class TestScaleUnidirectional:
             s, r = agents[i], agents[j]
             for _ in range(num_payments):
                 v = await s.manager.send_payment(
-                    cid, payment_amount, s.wallet.private_key, mock_send,
+                    cid,
+                    payment_amount,
+                    s.wallet.private_key,
+                    mock_send,
                 )
                 update = PaymentUpdate(
-                    channel_id=cid, nonce=v.nonce, amount=v.amount,
-                    timestamp=v.timestamp, signature=v.signature,
+                    channel_id=cid,
+                    nonce=v.nonce,
+                    amount=v.amount,
+                    timestamp=v.timestamp,
+                    signature=v.signature,
                 )
                 await r.manager.handle_payment_update(update)
 
@@ -246,8 +260,10 @@ class TestScaleBidirectional:
                 ch.activate()
 
                 open_msg = PaymentOpen(
-                    channel_id=cid, sender=s.wallet.address,
-                    receiver=r.wallet.address, total_deposit=deposit,
+                    channel_id=cid,
+                    sender=s.wallet.address,
+                    receiver=r.wallet.address,
+                    total_deposit=deposit,
                 )
                 await r.manager.handle_open_request(open_msg, f"Qm{i}")
 
@@ -267,11 +283,17 @@ class TestScaleBidirectional:
                 r = agents[j]
                 for _ in range(num_payments):
                     v = await s.manager.send_payment(
-                        cid, payment, s.wallet.private_key, mock_send,
+                        cid,
+                        payment,
+                        s.wallet.private_key,
+                        mock_send,
                     )
                     update = PaymentUpdate(
-                        channel_id=cid, nonce=v.nonce, amount=v.amount,
-                        timestamp=v.timestamp, signature=v.signature,
+                        channel_id=cid,
+                        nonce=v.nonce,
+                        amount=v.amount,
+                        timestamp=v.timestamp,
+                        signature=v.signature,
                     )
                     await r.manager.handle_payment_update(update)
 
@@ -312,8 +334,10 @@ class TestScaleHighVolume:
         ch_a.activate()
 
         open_msg = PaymentOpen(
-            channel_id=cid, sender=wa.address,
-            receiver=wb.address, total_deposit=deposit,
+            channel_id=cid,
+            sender=wa.address,
+            receiver=wb.address,
+            total_deposit=deposit,
         )
         await mgr_b.handle_open_request(open_msg, "QmA")
 
@@ -321,8 +345,11 @@ class TestScaleHighVolume:
         for _ in range(num_payments):
             v = await mgr_a.send_payment(cid, 1000, wa.private_key, mock_send)
             update = PaymentUpdate(
-                channel_id=cid, nonce=v.nonce, amount=v.amount,
-                timestamp=v.timestamp, signature=v.signature,
+                channel_id=cid,
+                nonce=v.nonce,
+                amount=v.amount,
+                timestamp=v.timestamp,
+                signature=v.signature,
             )
             await mgr_b.handle_payment_update(update)
 
@@ -336,11 +363,14 @@ class TestScaleHighVolume:
         assert ch_a.remaining_balance == 0
         assert ch_b.remaining_balance == 0
 
-    @pytest.mark.parametrize("n_agents,payments_per_channel", [
-        (5, 20),
-        (10, 10),
-        (20, 5),
-    ])
+    @pytest.mark.parametrize(
+        "n_agents,payments_per_channel",
+        [
+            (5, 20),
+            (10, 10),
+            (20, 5),
+        ],
+    )
     async def test_mesh_with_volume(self, n_agents: int, payments_per_channel: int):
         """N-agent mesh where each channel gets multiple payments."""
         agents = _create_agents(n_agents)
@@ -356,8 +386,10 @@ class TestScaleHighVolume:
             ch.accept()
             ch.activate()
             open_msg = PaymentOpen(
-                channel_id=cid, sender=s.wallet.address,
-                receiver=r.wallet.address, total_deposit=deposit,
+                channel_id=cid,
+                sender=s.wallet.address,
+                receiver=r.wallet.address,
+                total_deposit=deposit,
             )
             await r.manager.handle_open_request(open_msg, f"Qm{i}")
 
@@ -368,8 +400,11 @@ class TestScaleHighVolume:
             for _ in range(payments_per_channel):
                 v = await s.manager.send_payment(cid, payment, s.wallet.private_key, mock_send)
                 update = PaymentUpdate(
-                    channel_id=cid, nonce=v.nonce, amount=v.amount,
-                    timestamp=v.timestamp, signature=v.signature,
+                    channel_id=cid,
+                    nonce=v.nonce,
+                    amount=v.amount,
+                    timestamp=v.timestamp,
+                    signature=v.signature,
                 )
                 await r.manager.handle_payment_update(update)
 
@@ -407,8 +442,10 @@ class TestScaleCrossSigRejection:
             cid = _make_channel_id(i, j)
             s, r = agents[i], agents[j]
             open_msg = PaymentOpen(
-                channel_id=cid, sender=s.wallet.address,
-                receiver=r.wallet.address, total_deposit=100_000,
+                channel_id=cid,
+                sender=s.wallet.address,
+                receiver=r.wallet.address,
+                total_deposit=100_000,
             )
             await r.manager.handle_open_request(open_msg, f"Qm{i}")
 
@@ -425,8 +462,11 @@ class TestScaleCrossSigRejection:
 
             v = SignedVoucher.create(cid, 1, 1000, attacker.wallet.private_key)
             update = PaymentUpdate(
-                channel_id=cid, nonce=v.nonce, amount=v.amount,
-                timestamp=v.timestamp, signature=v.signature,
+                channel_id=cid,
+                nonce=v.nonce,
+                amount=v.amount,
+                timestamp=v.timestamp,
+                signature=v.signature,
             )
             with pytest.raises(ValueError, match="Invalid voucher signature"):
                 await r.manager.handle_payment_update(update)
@@ -544,16 +584,21 @@ class TestScaleBalanceAccounting:
             ch.activate()
 
             open_msg = PaymentOpen(
-                channel_id=cid, sender=s.wallet.address,
-                receiver=r.wallet.address, total_deposit=deposit,
+                channel_id=cid,
+                sender=s.wallet.address,
+                receiver=r.wallet.address,
+                total_deposit=deposit,
             )
             await r.manager.handle_open_request(open_msg, f"Qm{i}")
 
             for _ in range(num_payments):
                 v = await s.manager.send_payment(cid, payment, s.wallet.private_key, mock_send)
                 update = PaymentUpdate(
-                    channel_id=cid, nonce=v.nonce, amount=v.amount,
-                    timestamp=v.timestamp, signature=v.signature,
+                    channel_id=cid,
+                    nonce=v.nonce,
+                    amount=v.amount,
+                    timestamp=v.timestamp,
+                    signature=v.signature,
                 )
                 await r.manager.handle_payment_update(update)
 
@@ -583,15 +628,20 @@ class TestScaleBalanceAccounting:
             ch.accept()
             ch.activate()
             open_msg = PaymentOpen(
-                channel_id=cid, sender=s.wallet.address,
-                receiver=r.wallet.address, total_deposit=deposit,
+                channel_id=cid,
+                sender=s.wallet.address,
+                receiver=r.wallet.address,
+                total_deposit=deposit,
             )
             await r.manager.handle_open_request(open_msg, f"Qm{i}")
             for _ in range(num_payments):
                 v = await s.manager.send_payment(cid, payment, s.wallet.private_key, mock_send)
                 update = PaymentUpdate(
-                    channel_id=cid, nonce=v.nonce, amount=v.amount,
-                    timestamp=v.timestamp, signature=v.signature,
+                    channel_id=cid,
+                    nonce=v.nonce,
+                    amount=v.amount,
+                    timestamp=v.timestamp,
+                    signature=v.signature,
                 )
                 await r.manager.handle_payment_update(update)
 

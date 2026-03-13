@@ -60,6 +60,7 @@ class MockNode:
 
     async def open_payment_channel(self, peer_id, receiver, deposit):
         import os
+
         channel = self.channel_manager.create_channel(
             channel_id=os.urandom(32),
             receiver=receiver,
@@ -123,7 +124,8 @@ def _headers():
 class TestOpenChannelEdgeCases:
     async def test_missing_peer_id(self, client):
         resp = await client.post(
-            "/channels", data=_json({"receiver": "0x" + "ab" * 20, "deposit": 1000}),
+            "/channels",
+            data=_json({"receiver": "0x" + "ab" * 20, "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -132,7 +134,8 @@ class TestOpenChannelEdgeCases:
 
     async def test_peer_id_not_string(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": 12345, "receiver": "0x" + "ab" * 20, "deposit": 1000}),
+            "/channels",
+            data=_json({"peer_id": 12345, "receiver": "0x" + "ab" * 20, "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -140,14 +143,16 @@ class TestOpenChannelEdgeCases:
 
     async def test_peer_id_empty_string(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "", "receiver": "0x" + "ab" * 20, "deposit": 1000}),
+            "/channels",
+            data=_json({"peer_id": "", "receiver": "0x" + "ab" * 20, "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
 
     async def test_missing_receiver(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "deposit": 1000}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -155,14 +160,16 @@ class TestOpenChannelEdgeCases:
 
     async def test_receiver_not_string(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": 12345, "deposit": 1000}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": 12345, "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
 
     async def test_receiver_no_0x_prefix(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "ab" * 20, "deposit": 1000}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "ab" * 20, "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -170,7 +177,8 @@ class TestOpenChannelEdgeCases:
 
     async def test_receiver_too_short(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x1234", "deposit": 1000}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x1234", "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -178,14 +186,16 @@ class TestOpenChannelEdgeCases:
 
     async def test_receiver_too_long(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 21, "deposit": 1000}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 21, "deposit": 1000}),
             headers=_headers(),
         )
         assert resp.status_code == 400
 
     async def test_missing_deposit(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -193,7 +203,8 @@ class TestOpenChannelEdgeCases:
 
     async def test_deposit_zero(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": 0}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": 0}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -201,14 +212,16 @@ class TestOpenChannelEdgeCases:
 
     async def test_deposit_negative(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": -100}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": -100}),
             headers=_headers(),
         )
         assert resp.status_code == 400
 
     async def test_deposit_string_non_numeric(self, client):
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": "abc"}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": "abc"}),
             headers=_headers(),
         )
         assert resp.status_code == 400
@@ -217,7 +230,8 @@ class TestOpenChannelEdgeCases:
     async def test_deposit_float(self, client):
         """Float deposit should be truncated to int or rejected."""
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": 1000.5}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": 1000.5}),
             headers=_headers(),
         )
         # int(1000.5) = 1000, so this should succeed as 1000
@@ -226,7 +240,8 @@ class TestOpenChannelEdgeCases:
     async def test_deposit_string_numeric(self, client):
         """String "1000" should be parsed to int."""
         resp = await client.post(
-            "/channels", data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": "1000"}),
+            "/channels",
+            data=_json({"peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": "1000"}),
             headers=_headers(),
         )
         assert resp.status_code == 201
@@ -244,16 +259,32 @@ class TestOpenChannelEdgeCases:
         assert resp.status_code == 400
 
     async def test_extra_fields_ignored(self, client):
-        resp = await client.post("/channels", data=_json({
-            "peer_id": "QmPeer", "receiver": "0x" + "ab" * 20,
-            "deposit": 1000, "evil": "payload",
-        }), headers=_headers())
+        resp = await client.post(
+            "/channels",
+            data=_json(
+                {
+                    "peer_id": "QmPeer",
+                    "receiver": "0x" + "ab" * 20,
+                    "deposit": 1000,
+                    "evil": "payload",
+                }
+            ),
+            headers=_headers(),
+        )
         assert resp.status_code == 201
 
     async def test_successful_open_returns_active(self, client):
-        resp = await client.post("/channels", data=_json({
-            "peer_id": "QmPeer", "receiver": "0x" + "ab" * 20, "deposit": 500_000,
-        }), headers=_headers())
+        resp = await client.post(
+            "/channels",
+            data=_json(
+                {
+                    "peer_id": "QmPeer",
+                    "receiver": "0x" + "ab" * 20,
+                    "deposit": 500_000,
+                }
+            ),
+            headers=_headers(),
+        )
         assert resp.status_code == 201
         data = await resp.get_json()
         assert data["channel"]["state"] == "ACTIVE"
@@ -267,9 +298,17 @@ class TestOpenChannelEdgeCases:
 
 class TestPayEndpointEdgeCases:
     async def _open(self, client):
-        resp = await client.post("/channels", data=_json({
-            "peer_id": "QmPayee", "receiver": "0x" + "22" * 20, "deposit": 1_000_000,
-        }), headers=_headers())
+        resp = await client.post(
+            "/channels",
+            data=_json(
+                {
+                    "peer_id": "QmPayee",
+                    "receiver": "0x" + "22" * 20,
+                    "deposit": 1_000_000,
+                }
+            ),
+            headers=_headers(),
+        )
         return (await resp.get_json())["channel"]["channel_id"]
 
     async def test_missing_channel_id(self, client):
@@ -278,18 +317,21 @@ class TestPayEndpointEdgeCases:
         assert "channel_id" in (await resp.get_json())["error"]
 
     async def test_channel_id_not_string(self, client):
-        resp = await client.post("/pay", data=_json({"channel_id": 12345, "amount": 100}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": 12345, "amount": 100}), headers=_headers()
+        )
         assert resp.status_code == 400
 
     async def test_channel_id_empty_string(self, client):
-        resp = await client.post("/pay", data=_json({"channel_id": "", "amount": 100}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": "", "amount": 100}), headers=_headers()
+        )
         assert resp.status_code == 400
 
     async def test_channel_id_invalid_hex(self, client):
-        resp = await client.post("/pay", data=_json({"channel_id": "xyz-not-hex", "amount": 100}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": "xyz-not-hex", "amount": 100}), headers=_headers()
+        )
         assert resp.status_code == 400
         assert "hex" in (await resp.get_json())["error"]
 
@@ -301,34 +343,39 @@ class TestPayEndpointEdgeCases:
 
     async def test_amount_zero(self, client):
         cid = await self._open(client)
-        resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": 0}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": 0}), headers=_headers()
+        )
         assert resp.status_code == 400
         assert "positive" in (await resp.get_json())["error"]
 
     async def test_amount_negative(self, client):
         cid = await self._open(client)
-        resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": -500}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": -500}), headers=_headers()
+        )
         assert resp.status_code == 400
 
     async def test_amount_string_non_numeric(self, client):
         cid = await self._open(client)
-        resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": "abc"}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": "abc"}), headers=_headers()
+        )
         assert resp.status_code == 400
         assert "integer" in (await resp.get_json())["error"]
 
     async def test_amount_string_numeric(self, client):
         """String "100000" should be parsed to int."""
         cid = await self._open(client)
-        resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": "100000"}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": "100000"}), headers=_headers()
+        )
         assert resp.status_code == 200
 
     async def test_nonexistent_channel(self, client):
-        resp = await client.post("/pay", data=_json({"channel_id": "aa" * 32, "amount": 100}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": "aa" * 32, "amount": 100}), headers=_headers()
+        )
         assert resp.status_code == 404
 
     async def test_no_json_body(self, client):
@@ -339,8 +386,9 @@ class TestPayEndpointEdgeCases:
         cid = await self._open(client)
         # Pay 3 times
         for i in range(3):
-            resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": 100_000}),
-                                     headers=_headers())
+            resp = await client.post(
+                "/pay", data=_json({"channel_id": cid, "amount": 100_000}), headers=_headers()
+            )
             assert resp.status_code == 200
 
         data = (await resp.get_json())["voucher"]
@@ -351,19 +399,22 @@ class TestPayEndpointEdgeCases:
         """Should fail when cumulative amount exceeds deposit."""
         cid = await self._open(client)
         # First payment uses most of the deposit
-        resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": 900_000}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": 900_000}), headers=_headers()
+        )
         assert resp.status_code == 200
         # Second payment would exceed deposit (900k + 200k > 1M)
-        resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": 200_000}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": 200_000}), headers=_headers()
+        )
         assert resp.status_code == 400  # ChannelError returns 400
 
     async def test_pay_exact_deposit_amount(self, client):
         """Paying exactly the deposit amount should succeed."""
         cid = await self._open(client)
-        resp = await client.post("/pay", data=_json({"channel_id": cid, "amount": 1_000_000}),
-                                 headers=_headers())
+        resp = await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": 1_000_000}), headers=_headers()
+        )
         assert resp.status_code == 200
         data = (await resp.get_json())["voucher"]
         assert data["amount"] == 1_000_000
@@ -411,9 +462,17 @@ class TestCloseChannelEdgeCases:
     async def test_close_already_settled(self, client):
         """Closing an already-settled channel should fail."""
         # Open
-        open_resp = await client.post("/channels", data=_json({
-            "peer_id": "QmPeer", "receiver": "0x" + "11" * 20, "deposit": 100_000,
-        }), headers=_headers())
+        open_resp = await client.post(
+            "/channels",
+            data=_json(
+                {
+                    "peer_id": "QmPeer",
+                    "receiver": "0x" + "11" * 20,
+                    "deposit": 100_000,
+                }
+            ),
+            headers=_headers(),
+        )
         cid = (await open_resp.get_json())["channel"]["channel_id"]
         # Close once
         await client.post(f"/channels/{cid}/close")
@@ -429,9 +488,15 @@ class TestCloseChannelEdgeCases:
 
 class TestConnectEndpoint:
     async def test_connect_success(self, client, mock_node):
-        resp = await client.post("/connect", data=_json({
-            "multiaddr": "/ip4/127.0.0.1/tcp/9000/p2p/QmPeer",
-        }), headers=_headers())
+        resp = await client.post(
+            "/connect",
+            data=_json(
+                {
+                    "multiaddr": "/ip4/127.0.0.1/tcp/9000/p2p/QmPeer",
+                }
+            ),
+            headers=_headers(),
+        )
         assert resp.status_code == 200
         data = await resp.get_json()
         assert data["status"] == "connected"
@@ -444,13 +509,11 @@ class TestConnectEndpoint:
         assert "multiaddr" in data["error"] or "required" in data["error"]
 
     async def test_connect_multiaddr_not_string(self, client):
-        resp = await client.post("/connect", data=_json({"multiaddr": 12345}),
-                                 headers=_headers())
+        resp = await client.post("/connect", data=_json({"multiaddr": 12345}), headers=_headers())
         assert resp.status_code == 400
 
     async def test_connect_multiaddr_empty_string(self, client):
-        resp = await client.post("/connect", data=_json({"multiaddr": ""}),
-                                 headers=_headers())
+        resp = await client.post("/connect", data=_json({"multiaddr": ""}), headers=_headers())
         assert resp.status_code == 400
 
     async def test_connect_no_json(self, client):
@@ -459,9 +522,15 @@ class TestConnectEndpoint:
 
     async def test_connect_failure_returns_500(self, client, mock_node):
         mock_node._connect_mock.side_effect = ConnectionError("refused")
-        resp = await client.post("/connect", data=_json({
-            "multiaddr": "/ip4/10.0.0.1/tcp/9000/p2p/QmBad",
-        }), headers=_headers())
+        resp = await client.post(
+            "/connect",
+            data=_json(
+                {
+                    "multiaddr": "/ip4/10.0.0.1/tcp/9000/p2p/QmBad",
+                }
+            ),
+            headers=_headers(),
+        )
         assert resp.status_code == 500
         assert "refused" in (await resp.get_json())["error"]
 
@@ -475,11 +544,17 @@ class TestBalanceEdgeCases:
     async def test_balance_with_multiple_channels(self, client):
         """Open 3 channels with different deposits, pay on some."""
         for dep in [100_000, 200_000, 300_000]:
-            await client.post("/channels", data=_json({
-                "peer_id": f"QmPeer{dep}",
-                "receiver": "0x" + f"{dep:040x}",
-                "deposit": dep,
-            }), headers=_headers())
+            await client.post(
+                "/channels",
+                data=_json(
+                    {
+                        "peer_id": f"QmPeer{dep}",
+                        "receiver": "0x" + f"{dep:040x}",
+                        "deposit": dep,
+                    }
+                ),
+                headers=_headers(),
+            )
 
         resp = await client.get("/balance")
         data = await resp.get_json()
@@ -495,14 +570,23 @@ class TestBalanceEdgeCases:
 
     async def test_balance_after_pay_and_close(self, client):
         """Balance should still count closed channels."""
-        open_resp = await client.post("/channels", data=_json({
-            "peer_id": "QmPayee", "receiver": "0x" + "aa" * 20, "deposit": 500_000,
-        }), headers=_headers())
+        open_resp = await client.post(
+            "/channels",
+            data=_json(
+                {
+                    "peer_id": "QmPayee",
+                    "receiver": "0x" + "aa" * 20,
+                    "deposit": 500_000,
+                }
+            ),
+            headers=_headers(),
+        )
         cid = (await open_resp.get_json())["channel"]["channel_id"]
 
         # Pay
-        await client.post("/pay", data=_json({"channel_id": cid, "amount": 100_000}),
-                          headers=_headers())
+        await client.post(
+            "/pay", data=_json({"channel_id": cid, "amount": 100_000}), headers=_headers()
+        )
         # Close
         await client.post(f"/channels/{cid}/close")
 

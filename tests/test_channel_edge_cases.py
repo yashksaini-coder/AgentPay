@@ -433,9 +433,17 @@ class TestChannelSerialization:
         ch = _ch(peer_id="QmTestPeer123")
         d = ch.to_dict()
         required = {
-            "channel_id", "sender", "receiver", "total_deposit",
-            "state", "nonce", "total_paid", "remaining_balance",
-            "created_at", "updated_at", "peer_id",
+            "channel_id",
+            "sender",
+            "receiver",
+            "total_deposit",
+            "state",
+            "nonce",
+            "total_paid",
+            "remaining_balance",
+            "created_at",
+            "updated_at",
+            "peer_id",
         }
         assert required.issubset(d.keys())
 

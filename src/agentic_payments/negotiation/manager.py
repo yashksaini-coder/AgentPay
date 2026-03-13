@@ -51,14 +51,20 @@ class NegotiationManager:
             sla_terms=sla_terms,
         )
         neg.history.append(
-            NegotiationEvent(action="propose", price=proposed_price, by=initiator, sla_terms=sla_terms)
+            NegotiationEvent(
+                action="propose", price=proposed_price, by=initiator, sla_terms=sla_terms
+            )
         )
         self._negotiations[nid] = neg
         logger.info("negotiation_proposed", id=nid[:12], service=service_type, price=proposed_price)
         return neg
 
     def counter(
-        self, negotiation_id: str, by: str, counter_price: int, sla_terms: SLATerms | None = None,
+        self,
+        negotiation_id: str,
+        by: str,
+        counter_price: int,
+        sla_terms: SLATerms | None = None,
     ) -> Negotiation:
         """Submit a counter-offer with optional SLA term modifications."""
         neg = self._get_active(negotiation_id)
@@ -80,9 +86,7 @@ class NegotiationManager:
         if by not in (neg.initiator, neg.responder):
             raise ValueError("Only participants can accept")
         neg.state = NegotiationState.ACCEPTED
-        neg.history.append(
-            NegotiationEvent(action="accept", price=neg.current_price, by=by)
-        )
+        neg.history.append(NegotiationEvent(action="accept", price=neg.current_price, by=by))
         logger.info("negotiation_accepted", id=negotiation_id[:12], price=neg.current_price)
         return neg
 
@@ -92,9 +96,7 @@ class NegotiationManager:
         if by not in (neg.initiator, neg.responder):
             raise ValueError("Only participants can reject")
         neg.state = NegotiationState.REJECTED
-        neg.history.append(
-            NegotiationEvent(action="reject", price=neg.current_price, by=by)
-        )
+        neg.history.append(NegotiationEvent(action="reject", price=neg.current_price, by=by))
         logger.info("negotiation_rejected", id=negotiation_id[:12])
         return neg
 

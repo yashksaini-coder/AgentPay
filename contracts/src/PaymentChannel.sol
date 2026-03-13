@@ -31,18 +31,9 @@ contract PaymentChannel {
 
     mapping(bytes32 => Channel) public channels;
 
-    event ChannelOpened(
-        bytes32 indexed channelId,
-        address indexed sender,
-        address indexed receiver,
-        uint256 deposit
-    );
+    event ChannelOpened(bytes32 indexed channelId, address indexed sender, address indexed receiver, uint256 deposit);
     event TokenChannelOpened(
-        bytes32 indexed channelId,
-        address indexed sender,
-        address indexed receiver,
-        uint256 deposit,
-        address token
+        bytes32 indexed channelId, address indexed sender, address indexed receiver, uint256 deposit, address token
     );
     event ChannelCloseInitiated(bytes32 indexed channelId, uint256 amount, uint256 expiration);
     event ChannelChallenged(bytes32 indexed channelId, uint256 amount, uint256 nonce);
@@ -54,18 +45,13 @@ contract PaymentChannel {
      * @param duration Challenge period duration in seconds.
      * @return channelId The unique channel identifier.
      */
-    function openChannel(
-        address receiver,
-        uint256 duration
-    ) external payable returns (bytes32 channelId) {
+    function openChannel(address receiver, uint256 duration) external payable returns (bytes32 channelId) {
         require(msg.value > 0, "Deposit required");
         require(receiver != address(0), "Invalid receiver");
         require(receiver != msg.sender, "Cannot pay self");
         require(duration >= MIN_CHALLENGE_PERIOD, "Duration too short");
 
-        channelId = keccak256(
-            abi.encodePacked(msg.sender, receiver, block.timestamp, msg.value)
-        );
+        channelId = keccak256(abi.encodePacked(msg.sender, receiver, block.timestamp, msg.value));
         require(channels[channelId].deposit == 0, "Channel exists");
 
         channels[channelId] = Channel({
@@ -91,12 +77,10 @@ contract PaymentChannel {
      * @param amount The token deposit amount.
      * @return channelId The unique channel identifier.
      */
-    function openTokenChannel(
-        address receiver,
-        uint256 duration,
-        address token,
-        uint256 amount
-    ) external returns (bytes32 channelId) {
+    function openTokenChannel(address receiver, uint256 duration, address token, uint256 amount)
+        external
+        returns (bytes32 channelId)
+    {
         require(amount > 0, "Deposit required");
         require(receiver != address(0), "Invalid receiver");
         require(receiver != msg.sender, "Cannot pay self");
@@ -107,9 +91,7 @@ contract PaymentChannel {
         bool success = IERC20(token).transferFrom(msg.sender, address(this), amount);
         require(success, "Token transfer failed");
 
-        channelId = keccak256(
-            abi.encodePacked(msg.sender, receiver, block.timestamp, amount, token)
-        );
+        channelId = keccak256(abi.encodePacked(msg.sender, receiver, block.timestamp, amount, token));
         require(channels[channelId].deposit == 0, "Channel exists");
 
         channels[channelId] = Channel({
@@ -134,13 +116,9 @@ contract PaymentChannel {
      * @param timestamp Voucher timestamp.
      * @param signature Sender's ECDSA signature.
      */
-    function closeChannel(
-        bytes32 channelId,
-        uint256 amount,
-        uint256 nonce,
-        uint256 timestamp,
-        bytes calldata signature
-    ) external {
+    function closeChannel(bytes32 channelId, uint256 amount, uint256 nonce, uint256 timestamp, bytes calldata signature)
+        external
+    {
         Channel storage ch = channels[channelId];
         require(ch.deposit > 0, "Channel not found");
         require(!ch.closed, "Already closed");
@@ -231,20 +209,21 @@ contract PaymentChannel {
     /**
      * @notice Query channel state.
      */
-    function getChannel(bytes32 channelId) external view returns (
-        address sender,
-        address receiver,
-        uint256 deposit,
-        uint256 closingNonce,
-        uint256 closingAmount,
-        uint256 expiration,
-        bool closed
-    ) {
+    function getChannel(bytes32 channelId)
+        external
+        view
+        returns (
+            address sender,
+            address receiver,
+            uint256 deposit,
+            uint256 closingNonce,
+            uint256 closingAmount,
+            uint256 expiration,
+            bool closed
+        )
+    {
         Channel storage ch = channels[channelId];
-        return (
-            ch.sender, ch.receiver, ch.deposit,
-            ch.closingNonce, ch.closingAmount, ch.expiration, ch.closed
-        );
+        return (ch.sender, ch.receiver, ch.deposit, ch.closingNonce, ch.closingAmount, ch.expiration, ch.closed);
     }
 
     /**

@@ -45,7 +45,7 @@ Built on [py-libp2p](https://github.com/libp2p/py-libp2p) with Noise encryption,
 | Tooling | uv (package manager), hatchling (build), ruff (lint/format), Foundry (contracts) |
 
 <div align="center">
-  <img src="public/system-architecture.png" alt="System Architecture" width="800" />
+  <img src="docs/images/system-architecture.png" alt="System Architecture" width="800" />
 </div>
 
 ## Prerequisites
@@ -132,13 +132,13 @@ The dashboard at `http://localhost:3000` provides a multi-agent network view for
 6. Operations flash **green** on success, **yellow** on failure on the involved nodes
 
 <div align="center">
-  <img src="public/Payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
+  <img src="docs/images/payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
   <br />
   <em>Payment channel lifecycle — open, pay, close, settle</em>
 </div>
 
 <div align="center">
-  <img src="public/state-machine.png" alt="Channel State Machine" width="700" />
+  <img src="docs/images/state-machine.png" alt="Channel State Machine" width="700" />
   <br />
   <em>Channel state machine — PROPOSED → ACTIVE → SETTLED</em>
 </div>

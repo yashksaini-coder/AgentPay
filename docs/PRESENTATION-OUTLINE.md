@@ -52,7 +52,7 @@ Lock funds once → Exchange signatures off-chain × 1000s → Settle once
 
 ## Slide 5 — AgentPay Architecture
 
-**Show**: `public/system-architecture.png`
+**Show**: `docs/images/system-architecture.png`
 
 - Two agent nodes communicating over libp2p
 - Each node: Identity (Ed25519) + Wallet (secp256k1) + Channel Manager
@@ -87,7 +87,7 @@ Lock funds once → Exchange signatures off-chain × 1000s → Settle once
 
 ## Slide 8 — Payment Protocol Deep Dive
 
-**Show**: `public/Payment-channel-lifecycle.png`
+**Show**: `docs/images/payment-channel-lifecycle.png`
 
 1. **Open**: `PaymentOpen` message → counterparty ACKs → channel ACTIVE
 2. **Pay**: `PaymentUpdate(nonce, cumulative_amount, signature)` → verify → ACK
@@ -116,7 +116,7 @@ Voucher n=3: amount=0.6 ETH   (total paid: 0.6)
 
 ## Slide 10 — Channel State Machine
 
-**Show**: `public/state-machine.png`
+**Show**: `docs/images/state-machine.png`
 
 - 6 states: PROPOSED → OPEN → ACTIVE → CLOSING → DISPUTED → SETTLED
 - Fraud protection: challenge period lets sender dispute with higher-nonce voucher

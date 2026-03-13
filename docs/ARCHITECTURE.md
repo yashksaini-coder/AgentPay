@@ -37,7 +37,7 @@ This system implements **off-chain payment channels** between autonomous AI agen
 The core insight is that agent-to-agent micropayments need sub-second latency and near-zero marginal cost per transaction. On-chain transactions are too slow and expensive for per-request payments. Payment channels solve this by moving the payment loop off-chain while preserving the security guarantees of the underlying blockchain.
 
 <div align="center">
-  <img src="../public/system-architecture.png" alt="System Architecture" width="800" />
+  <img src="images/system-architecture.png" alt="System Architecture" width="800" />
   <br />
   <em>System Architecture — Agent nodes, libp2p networking, and Ethereum settlement</em>
 </div>
@@ -183,7 +183,7 @@ The handler runs a read loop on each incoming stream. Each message is dispatched
 ### 4.1 Channel State Machine
 
 <div align="center">
-  <img src="../public/state-machine.png" alt="Payment Channel State Machine" width="700" />
+  <img src="images/state-machine.png" alt="Payment Channel State Machine" width="700" />
   <br />
   <em>Payment Channel State Machine — lifecycle of a single payment channel</em>
 </div>
@@ -351,7 +351,7 @@ Both use EIP-191 `personal_sign` format (`\x19Ethereum Signed Message:\n32` pref
 ## 6. Payment Flow (End-to-End)
 
 <div align="center">
-  <img src="../public/Payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
+  <img src="images/payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
   <br />
   <em>Payment Channel Lifecycle — open, pay, close, settle</em>
 </div>
@@ -730,7 +730,7 @@ Excalidraw diagrams are available in [`/diagrams/`](../diagrams/):
 | Negotiation + Payment Flow | [`negotiation-flow.excalidraw`](../diagrams/negotiation-flow.excalidraw) | Full flow: discovery → negotiate → open → pay → close with SLA tracking |
 | Trust Architecture | [`trust-architecture.excalidraw`](../diagrams/trust-architecture.excalidraw) | Reputation, SLA, disputes, policies, pricing interactions |
 
-PNG exports are in [`/public/`](../public/). To edit, open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com).
+PNG exports are in [`docs/images/`](images/). To edit, open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com).
 
 ---
 

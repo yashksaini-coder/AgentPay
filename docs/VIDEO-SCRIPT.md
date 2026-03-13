@@ -115,7 +115,7 @@ curl -s http://127.0.0.1:8080/balance | python3 -m json.tool
 
 ### [3:30–4:00] Architecture Highlight
 
-**Show**: System architecture diagram (`public/system-architecture.png`)
+**Show**: System architecture diagram (`docs/images/system-architecture.png`)
 
 **Say**:
 > "Under the hood: libp2p handles networking — Noise encryption, Yamux multiplexing, GossipSub for pub-sub coordination. The payment protocol runs as a custom stream handler.

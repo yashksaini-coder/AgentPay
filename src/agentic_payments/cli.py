@@ -16,10 +16,26 @@ app = typer.Typer(
 identity_app = typer.Typer(help="Manage node identity.")
 peer_app = typer.Typer(help="Manage peer connections.")
 channel_app = typer.Typer(help="Manage payment channels.")
+discovery_app = typer.Typer(help="Agent discovery and capabilities.")
+negotiate_app = typer.Typer(help="Service negotiation with SLA terms.")
+reputation_app = typer.Typer(help="Peer trust and reputation.")
+policy_app = typer.Typer(help="Wallet spending policies.")
+receipts_app = typer.Typer(help="Signed receipt chains.")
+gateway_app = typer.Typer(help="x402 resource gateway.")
+pricing_app = typer.Typer(help="Dynamic pricing engine.")
+dispute_app = typer.Typer(help="Dispute resolution.")
 
 app.add_typer(identity_app, name="identity")
 app.add_typer(peer_app, name="peer")
 app.add_typer(channel_app, name="channel")
+app.add_typer(discovery_app, name="discovery")
+app.add_typer(negotiate_app, name="negotiate")
+app.add_typer(reputation_app, name="reputation")
+app.add_typer(policy_app, name="policy")
+app.add_typer(receipts_app, name="receipts")
+app.add_typer(gateway_app, name="gateway")
+app.add_typer(pricing_app, name="pricing")
+app.add_typer(dispute_app, name="dispute")
 
 
 def _setup_logging(level: str = "INFO", fmt: str = "console") -> None:
@@ -189,6 +205,10 @@ def start(
     ws_port: int = typer.Option(9001, help="WebSocket listen port"),
     api_port: int = typer.Option(8080, help="REST API port"),
     eth_rpc: str = typer.Option("http://localhost:8545", help="Ethereum RPC URL"),
+    chain: str = typer.Option("ethereum", help="Settlement chain: ethereum or algorand"),
+    algo_url: str = typer.Option("http://localhost:4001", help="Algorand node URL"),
+    algo_token: str = typer.Option("", help="Algorand API token"),
+    algo_app_id: int = typer.Option(0, help="Algorand payment channel app ID"),
     log_level: str = typer.Option("INFO", help="Log level"),
     identity_path: Path = typer.Option(
         Path("~/.agentic-payments/identity.key"), help="Identity key file"
@@ -207,6 +227,13 @@ def start(
     settings.node.identity_path = identity_path
     settings.api.port = api_port
     settings.ethereum.rpc_url = eth_rpc
+    settings.chain_type = chain  # type: ignore[assignment]
+    if algo_url != "http://localhost:4001":
+        settings.algorand.algod_url = algo_url
+    if algo_token:
+        settings.algorand.algod_token = algo_token
+    if algo_app_id:
+        settings.algorand.app_id = algo_app_id
 
     async def run() -> None:
         async with trio.open_nursery() as nursery:
@@ -677,6 +704,417 @@ def simulate(
         typer.echo("[cleanup] Stopping spawned agents...")
         cleanup_procs()
         typer.echo("  Done.\n")
+
+
+def _api_call(api_url: str, path: str, method: str = "GET", data: dict | None = None) -> dict:
+    """Make an API call and return parsed JSON."""
+    import json
+    import urllib.request
+
+    url = f"{api_url}{path}"
+    if data is not None:
+        payload = json.dumps(data).encode()
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"},
+            method=method,
+        )
+    else:
+        req = urllib.request.Request(url, method=method)
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())
+
+
+def _api_or_exit(api_url: str, path: str, method: str = "GET", data: dict | None = None) -> dict:
+    """API call with error handling — prints error and exits on failure."""
+    try:
+        return _api_call(api_url, path, method, data)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+# ── Discovery commands ──────────────────────────────────────────
+
+@discovery_app.command("list")
+def discovery_list(
+    capability: str = typer.Option("", help="Filter by capability type"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List discovered agents and their capabilities."""
+    path = "/discovery/agents"
+    if capability:
+        path += f"?capability={capability}"
+    data = _api_or_exit(api_url, path)
+    agents = data.get("agents", [])
+    if not agents:
+        typer.echo("No agents discovered.")
+        return
+    for agent in agents:
+        typer.echo(f"\n  Peer: {agent['peer_id']}")
+        typer.echo(f"  ETH:  {agent.get('eth_address', 'N/A')}")
+        for cap in agent.get("capabilities", []):
+            typer.echo(f"    • {cap['service_type']}  {cap.get('price_per_call', '?')} wei  {cap.get('description', '')}")
+
+
+@discovery_app.command("resources")
+def discovery_resources(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List resources in Bazaar-compatible format."""
+    data = _api_or_exit(api_url, "/discovery/resources")
+    resources = data.get("resources", [])
+    if not resources:
+        typer.echo("No resources available.")
+        return
+    for r in resources:
+        typer.echo(f"  {r.get('path', r.get('service_type', '?'))}  "
+                    f"{r.get('price', '?')} wei  {r.get('description', '')}")
+
+
+# ── Negotiation commands ────────────────────────────────────────
+
+@negotiate_app.command("propose")
+def negotiate_propose(
+    peer: str = typer.Option(..., help="Peer ID"),
+    service: str = typer.Option(..., help="Service type"),
+    price: int = typer.Option(..., help="Proposed price in wei"),
+    deposit: int = typer.Option(0, help="Channel deposit in wei"),
+    max_latency: int = typer.Option(0, help="SLA: max latency in ms"),
+    min_availability: float = typer.Option(0.0, help="SLA: min availability (0-1)"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Propose a service negotiation with a peer."""
+    payload: dict = {
+        "peer_id": peer,
+        "service_type": service,
+        "proposed_price": price,
+    }
+    if deposit:
+        payload["channel_deposit"] = deposit
+    sla: dict = {}
+    if max_latency:
+        sla["max_latency_ms"] = max_latency
+    if min_availability:
+        sla["min_availability"] = min_availability
+    if sla:
+        payload["sla_terms"] = sla
+    data = _api_or_exit(api_url, "/negotiate", method="POST", data=payload)
+    neg = data.get("negotiation", {})
+    typer.echo(f"Negotiation proposed: {neg.get('negotiation_id', 'N/A')}")
+    typer.echo(f"  State: {neg.get('state', '?')}")
+
+
+@negotiate_app.command("counter")
+def negotiate_counter(
+    negotiation_id: str = typer.Option(..., "--id", help="Negotiation ID"),
+    price: int = typer.Option(..., help="Counter price in wei"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Counter-propose on a negotiation."""
+    data = _api_or_exit(
+        api_url, f"/negotiations/{negotiation_id}/counter",
+        method="POST", data={"counter_price": price},
+    )
+    typer.echo(f"Counter sent. State: {data.get('negotiation', {}).get('state', '?')}")
+
+
+@negotiate_app.command("accept")
+def negotiate_accept(
+    negotiation_id: str = typer.Option(..., "--id", help="Negotiation ID"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Accept a negotiation."""
+    data = _api_or_exit(
+        api_url, f"/negotiations/{negotiation_id}/accept", method="POST",
+    )
+    typer.echo(f"Negotiation accepted. State: {data.get('negotiation', {}).get('state', '?')}")
+
+
+@negotiate_app.command("reject")
+def negotiate_reject(
+    negotiation_id: str = typer.Option(..., "--id", help="Negotiation ID"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Reject a negotiation."""
+    _api_or_exit(
+        api_url, f"/negotiations/{negotiation_id}/reject", method="POST",
+    )
+    typer.echo("Negotiation rejected.")
+
+
+@negotiate_app.command("list")
+def negotiate_list(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List all negotiations."""
+    data = _api_or_exit(api_url, "/negotiations")
+    negs = data.get("negotiations", [])
+    if not negs:
+        typer.echo("No negotiations.")
+        return
+    for n in negs:
+        typer.echo(f"  {n['negotiation_id'][:16]}…  {n['state']:<12}  "
+                    f"{n.get('service_type', '?')}  {n.get('current_price', '?')} wei")
+
+
+@negotiate_app.command("show")
+def negotiate_show(
+    negotiation_id: str = typer.Option(..., "--id", help="Negotiation ID"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show negotiation details."""
+    import json
+    data = _api_or_exit(api_url, f"/negotiations/{negotiation_id}")
+    typer.echo(json.dumps(data.get("negotiation", data), indent=2))
+
+
+# ── Reputation commands ─────────────────────────────────────────
+
+@reputation_app.command("list")
+def reputation_list(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List reputation scores for all peers."""
+    data = _api_or_exit(api_url, "/reputation")
+    peers = data.get("peers", data.get("reputations", []))
+    if not peers:
+        typer.echo("No reputation data.")
+        return
+    for p in peers:
+        score = p.get("trust_score", p.get("score", "?"))
+        typer.echo(f"  {p.get('peer_id', '?')[:24]}…  trust={score:.2f}" if isinstance(score, float)
+                    else f"  {p.get('peer_id', '?')[:24]}…  trust={score}")
+
+
+@reputation_app.command("show")
+def reputation_show(
+    peer_id: str = typer.Option(..., "--peer", help="Peer ID"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show detailed reputation for a peer."""
+    import json
+    data = _api_or_exit(api_url, f"/reputation/{peer_id}")
+    typer.echo(json.dumps(data.get("reputation", data), indent=2))
+
+
+# ── Policy commands ─────────────────────────────────────────────
+
+@policy_app.command("show")
+def policy_show(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show current wallet spending policies."""
+    import json
+    data = _api_or_exit(api_url, "/policies")
+    typer.echo(json.dumps(data.get("policy", data), indent=2))
+
+
+@policy_app.command("set")
+def policy_set(
+    max_per_tx: int = typer.Option(0, help="Max spend per transaction (wei)"),
+    max_total: int = typer.Option(0, help="Max total spend (wei)"),
+    rate_limit: int = typer.Option(0, help="Rate limit per minute"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Update wallet spending policies."""
+    payload: dict = {}
+    if max_per_tx:
+        payload["max_spend_per_tx"] = max_per_tx
+    if max_total:
+        payload["max_total_spend"] = max_total
+    if rate_limit:
+        payload["rate_limit_per_min"] = rate_limit
+    if not payload:
+        typer.echo("No policy values specified. Use --max-per-tx, --max-total, or --rate-limit.")
+        raise typer.Exit(1)
+    data = _api_or_exit(api_url, "/policies", method="PUT", data=payload)
+    typer.echo("Policy updated.")
+    import json
+    typer.echo(json.dumps(data.get("policy", data), indent=2))
+
+
+# ── Receipts commands ───────────────────────────────────────────
+
+@receipts_app.command("list")
+def receipts_list(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List all signed receipts."""
+    data = _api_or_exit(api_url, "/receipts")
+    receipts = data.get("receipts", [])
+    if not receipts:
+        typer.echo("No receipts.")
+        return
+    for r in receipts:
+        typer.echo(f"  {r.get('receipt_id', '?')[:16]}…  ch={r.get('channel_id', '?')[:16]}…  "
+                    f"nonce={r.get('nonce', '?')}  amount={r.get('amount', '?')} wei")
+
+
+@receipts_app.command("show")
+def receipts_show(
+    channel_id: str = typer.Option(..., "--channel", help="Channel ID (hex)"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show receipt chain for a channel."""
+    import json
+    data = _api_or_exit(api_url, f"/receipts/{channel_id}")
+    typer.echo(json.dumps(data.get("receipts", data), indent=2))
+
+
+# ── Gateway commands ────────────────────────────────────────────
+
+@gateway_app.command("resources")
+def gateway_resources(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List gated resources (x402/Bazaar format)."""
+    data = _api_or_exit(api_url, "/gateway/resources")
+    resources = data.get("resources", [])
+    if not resources:
+        typer.echo("No gated resources.")
+        return
+    for r in resources:
+        typer.echo(f"  {r.get('path', '?')}  {r.get('price', '?')} wei  {r.get('description', '')}")
+
+
+@gateway_app.command("register")
+def gateway_register(
+    path: str = typer.Option(..., help="Resource path (e.g. /api/inference)"),
+    price: int = typer.Option(..., help="Price per call in wei"),
+    description: str = typer.Option("", help="Resource description"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Register a new gated resource."""
+    _api_or_exit(api_url, "/gateway/register", method="POST", data={
+        "path": path,
+        "price": price,
+        "description": description,
+    })
+    typer.echo(f"Resource registered: {path}")
+
+
+# ── Pricing commands ────────────────────────────────────────────
+
+@pricing_app.command("quote")
+def pricing_quote(
+    service: str = typer.Option(..., help="Service type"),
+    peer: str = typer.Option("", help="Peer ID (for trust-adjusted pricing)"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Get a dynamic price quote for a service."""
+    payload: dict = {"service_type": service}
+    if peer:
+        payload["peer_id"] = peer
+    data = _api_or_exit(api_url, "/pricing/quote", method="POST", data=payload)
+    quote = data.get("quote", data)
+    typer.echo(f"  Base price:     {quote.get('base_price', '?')} wei")
+    typer.echo(f"  Adjusted price: {quote.get('adjusted_price', quote.get('price', '?'))} wei")
+    typer.echo(f"  Trust discount: {quote.get('trust_discount', '?')}")
+    typer.echo(f"  Congestion:     {quote.get('congestion_premium', '?')}")
+
+
+@pricing_app.command("config")
+def pricing_config(
+    show: bool = typer.Option(True, "--show/--no-show", help="Show current config"),
+    trust_discount: float = typer.Option(0.0, help="Trust discount factor (0-1)"),
+    congestion_premium: float = typer.Option(0.0, help="Congestion premium factor (0-1)"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """View or update pricing configuration."""
+    import json
+    if trust_discount or congestion_premium:
+        payload: dict = {}
+        if trust_discount:
+            payload["trust_discount_factor"] = trust_discount
+        if congestion_premium:
+            payload["congestion_premium_factor"] = congestion_premium
+        data = _api_or_exit(api_url, "/pricing/config", method="PUT", data=payload)
+        typer.echo("Pricing config updated:")
+        typer.echo(json.dumps(data.get("config", data), indent=2))
+    else:
+        data = _api_or_exit(api_url, "/pricing/config")
+        typer.echo(json.dumps(data.get("config", data), indent=2))
+
+
+# ── Dispute commands ────────────────────────────────────────────
+
+@dispute_app.command("list")
+def dispute_list(
+    pending: bool = typer.Option(False, "--pending", help="Show only pending disputes"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List disputes."""
+    path = "/disputes?pending_only=true" if pending else "/disputes"
+    data = _api_or_exit(api_url, path)
+    disputes = data.get("disputes", [])
+    if not disputes:
+        typer.echo("No disputes.")
+        return
+    for d in disputes:
+        typer.echo(f"  {d.get('dispute_id', '?')[:16]}…  {d.get('reason', '?'):<16}  "
+                    f"{d.get('resolution', '?'):<16}  ch={d.get('channel_id', '?')[:16]}…")
+
+
+@dispute_app.command("show")
+def dispute_show(
+    dispute_id: str = typer.Option(..., "--id", help="Dispute ID"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show dispute details."""
+    import json
+    data = _api_or_exit(api_url, f"/disputes/{dispute_id}")
+    typer.echo(json.dumps(data.get("dispute", data), indent=2))
+
+
+@dispute_app.command("file")
+def dispute_file(
+    channel: str = typer.Option(..., "--channel", help="Channel ID (hex)"),
+    reason: str = typer.Option("STALE_VOUCHER", help="Reason: STALE_VOUCHER, SLA_VIOLATION, DOUBLE_SPEND, UNRESPONSIVE"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """File a dispute on a channel."""
+    data = _api_or_exit(
+        api_url, f"/channels/{channel}/dispute",
+        method="POST", data={"reason": reason},
+    )
+    typer.echo(f"Dispute filed: {data.get('dispute', {}).get('dispute_id', 'N/A')}")
+
+
+@dispute_app.command("scan")
+def dispute_scan(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Scan channels for potential disputes."""
+    data = _api_or_exit(api_url, "/disputes/scan", method="POST")
+    found = data.get("disputes_filed", data.get("count", 0))
+    typer.echo(f"Scan complete. {found} dispute(s) filed.")
+
+
+# ── SLA commands (bonus — exposed under main app) ──────────────
+
+@app.command("sla")
+def sla_status(
+    channel: str = typer.Option("", "--channel", help="Channel ID (hex) or empty for all"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show SLA compliance status."""
+    import json
+    if channel:
+        data = _api_or_exit(api_url, f"/sla/channels/{channel}")
+    else:
+        data = _api_or_exit(api_url, "/sla/channels")
+    typer.echo(json.dumps(data, indent=2))
+
+
+@app.command("chain")
+def chain_info(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show settlement chain information."""
+    import json
+    data = _api_or_exit(api_url, "/chain")
+    typer.echo(json.dumps(data, indent=2))
 
 
 if __name__ == "__main__":

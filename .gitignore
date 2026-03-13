@@ -54,8 +54,5 @@ frontend/.env.local
 frontend/next-env.d.ts
 frontend/tsconfig.tsbuildinfo
 
-# Documentation (private/draft)
-docs/
-
 # Claude Code
 .claude/

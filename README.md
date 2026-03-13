@@ -6,16 +6,17 @@
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776ab?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-120%20passing-brightgreen?style=flat-square&logo=pytest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/tests-539%20passing-brightgreen?style=flat-square&logo=pytest&logoColor=white)]()
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-d7ff64?style=flat-square&logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
 [![libp2p](https://img.shields.io/badge/libp2p-0.6.0-blue?style=flat-square&logo=libp2p&logoColor=white)](https://libp2p.io)
 [![Solidity](https://img.shields.io/badge/solidity-%5E0.8-363636?style=flat-square&logo=solidity&logoColor=white)](https://soliditylang.org)
+[![Algorand](https://img.shields.io/badge/algorand-ARC--4-black?style=flat-square&logo=algorand&logoColor=white)](https://algorand.co)
 [![Next.js 15](https://img.shields.io/badge/next.js-15-000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org)
 [![Ethereum](https://img.shields.io/badge/ethereum-settlement-3c3c3d?style=flat-square&logo=ethereum&logoColor=white)](https://ethereum.org)
 
-Agents discover each other via **mDNS**, negotiate over **libp2p streams**, exchange **signed payment vouchers** off-chain, and settle on **Ethereum**.
+Agents discover each other via **mDNS**, negotiate terms over **libp2p streams**, exchange **signed payment vouchers** off-chain, and settle on **Ethereum** or **Algorand**.
 
-Built on [py-libp2p](https://github.com/libp2p/py-libp2p) with Noise encryption, Yamux multiplexing, and GossipSub pubsub.
+Built on [py-libp2p](https://github.com/libp2p/py-libp2p) with Noise encryption, Yamux multiplexing, and GossipSub pubsub. Designed for the [ARIA Scaling Trust](https://www.aria.org.uk/programme/scaling-trust/) programme (Track 2 — Tooling).
 
 [Quick Start](#quick-start) | [CLI Commands](docs/COMMANDS.md) | [Architecture](docs/ARCHITECTURE.md) | [REST API](#rest-api) | [Dashboard](#frontend-dashboard)
 
@@ -30,13 +31,16 @@ Built on [py-libp2p](https://github.com/libp2p/py-libp2p) with Noise encryption,
 | Runtime | Python 3.12+, [trio](https://trio.readthedocs.io/) structured concurrency |
 | Networking | py-libp2p 0.6.0 — TCP/WS transports, Noise security, Yamux muxing, mDNS discovery, GossipSub pubsub |
 | Payments | Filecoin-style cumulative vouchers, ECDSA signatures via eth-account, HTLC multi-hop routing |
-| Settlement | Solidity unidirectional payment channel on Ethereum |
-| Discovery | Capability registry with mDNS-based agent advertisement, Bazaar-compatible format |
-| Negotiation | Propose/counter/accept/reject protocol with state machine |
+| Settlement | **Ethereum** (Solidity PaymentChannel.sol) and **Algorand** (ARC-4 smart contract with box storage) — chain-selectable at startup |
+| Discovery | Capability registry with mDNS + GossipSub agent advertisement, Bazaar-compatible format |
+| Negotiation | Propose/counter/accept/reject protocol with state machine and SLA terms |
 | Trust | Reputation scoring (success rate, volume, response time), wallet policies, signed receipt chains |
+| SLA | Per-channel SLA monitoring with latency/error-rate thresholds and auto-violation detection |
+| Pricing | Dynamic pricing engine with trust discounts, congestion premiums, and per-service quoting |
+| Disputes | Automated dispute detection (stale vouchers), manual filing, reputation-linked resolution |
 | Gateway | x402-compatible resource gating for ecosystem interoperability |
-| API | Quart-Trio REST (~25 endpoints) + Hypercorn ASGI server |
-| Frontend | Next.js 15, React 19, Tailwind CSS 4 — network graph, trust panels, simulation |
+| API | Quart-Trio REST (~40 endpoints) + Hypercorn ASGI server |
+| Frontend | Next.js 15, React 19, Tailwind CSS 4 — network graph, trust panels, SLA/disputes/pricing panels, simulation |
 | Persistence | PostgreSQL via asyncpg (optional) |
 | Tooling | uv (package manager), hatchling (build), ruff (lint/format), Foundry (contracts) |
 
@@ -144,7 +148,7 @@ The dashboard at `http://localhost:3000` provides a multi-agent network view for
 All commands use `uv run agentpay` (or just `agentpay` if installed).
 
 ```bash
-# Start an agent node
+# Start an agent node (Ethereum or Algorand)
 agentpay start [--port 9000] [--ws-port 9001] [--api-port 8080] \
                [--eth-rpc http://localhost:8545] [--log-level INFO] \
                [--identity-path ~/.agentic-payments/identity.key]
@@ -153,17 +157,46 @@ agentpay start [--port 9000] [--ws-port 9001] [--api-port 8080] \
 agentpay identity generate [--path ~/.agentic-payments/identity.key]
 agentpay identity show [--path ~/.agentic-payments/identity.key]
 
-# Peer operations (requires running node)
+# Peer operations
 agentpay peer list [--api-url http://127.0.0.1:8080]
 agentpay peer connect <multiaddr> [--api-url http://127.0.0.1:8080]
 
-# Payment channels (requires running node)
-agentpay channel open --peer <peer_id> --deposit <wei> [--api-url http://127.0.0.1:8080]
-agentpay channel close --channel <hex_id> [--api-url http://127.0.0.1:8080]
+# Payment channels
+agentpay channel open --peer <peer_id> --deposit <wei>
+agentpay channel close --channel <hex_id>
 
-# Payments (requires running node)
-agentpay pay --channel <hex_id> --amount <wei> [--api-url http://127.0.0.1:8080]
-agentpay balance [--api-url http://127.0.0.1:8080]
+# Payments
+agentpay pay --channel <hex_id> --amount <wei>
+agentpay balance
+
+# Discovery & negotiation
+agentpay discovery list                          # List discovered agents
+agentpay discovery resources                     # Bazaar-compatible resource list
+agentpay negotiate propose --peer <id> --service compute --price 1000 --deposit 10000
+agentpay negotiate accept --negotiation <id>
+agentpay negotiate counter --negotiation <id> --price 800
+agentpay negotiate list
+
+# Trust & reputation
+agentpay reputation list                         # All peer trust scores
+agentpay reputation show <peer_id>               # Single peer details
+agentpay receipts list                           # All receipt chains
+agentpay policy show                             # Current wallet policies
+agentpay policy set --max-spend-per-tx 1000000
+
+# Pricing & SLA
+agentpay pricing quote --service compute         # Get dynamic price quote
+agentpay pricing config                          # View pricing engine config
+agentpay sla                                     # SLA violations summary
+
+# Disputes
+agentpay dispute list                            # All disputes
+agentpay dispute scan                            # Scan for stale vouchers
+agentpay dispute file --channel <hex_id> --reason stale_voucher
+
+# Gateway & chain info
+agentpay gateway resources                       # x402 resource listing
+agentpay chain                                   # Chain type and settlement info
 ```
 
 ## REST API
@@ -172,28 +205,53 @@ All endpoints return JSON. CORS enabled. Default base URL: `http://127.0.0.1:808
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| **Core** | | |
 | GET | `/health` | Health check |
-| GET | `/identity` | Peer ID, ETH address, listen addresses |
+| GET | `/identity` | Peer ID, ETH/ALGO address, listen addresses, chain info |
 | GET | `/peers` | Discovered peers with addresses |
 | GET | `/channels` | All payment channels with state |
 | GET | `/channels/:id` | Single channel by hex ID |
 | POST | `/channels` | Open channel |
 | POST | `/channels/:id/close` | Cooperative close |
 | POST | `/pay` | Send micropayment voucher |
-| POST | `/pay/route` | Multi-hop HTLC payment |
 | GET | `/balance` | Aggregate balance across all channels |
+| GET | `/graph` | Network routing graph |
+| POST | `/route` | Find multi-hop route |
+| POST | `/route-pay` | Multi-hop HTLC payment |
+| POST | `/connect` | Connect to peer by multiaddr |
+| GET | `/chain` | Chain type and settlement status |
+| **Discovery** | | |
 | GET | `/discovery/agents` | Discovered agents with capabilities |
-| POST | `/negotiate` | Propose negotiation |
+| GET | `/discovery/resources` | Bazaar-compatible resource listing |
+| **Negotiation** | | |
+| POST | `/negotiate` | Propose negotiation with SLA terms |
 | GET | `/negotiations` | List all negotiations |
+| GET | `/negotiations/:id` | Single negotiation details |
+| POST | `/negotiations/:id/counter` | Counter-propose price |
 | POST | `/negotiations/:id/accept` | Accept negotiation |
 | POST | `/negotiations/:id/reject` | Reject negotiation |
-| POST | `/negotiations/:id/counter` | Counter-propose price |
+| **Trust & Reputation** | | |
 | GET | `/reputation` | All peer trust scores |
 | GET | `/reputation/:peer_id` | Single peer reputation |
 | GET | `/receipts` | All signed receipts |
 | GET | `/receipts/:channel_id` | Receipt chain for a channel |
 | GET | `/policies` | Current wallet policies |
 | PUT | `/policies` | Update wallet policies |
+| **Pricing** | | |
+| POST | `/pricing/quote` | Get dynamic price quote for a service |
+| GET | `/pricing/config` | Current pricing engine config |
+| PUT | `/pricing/config` | Update pricing policy |
+| **SLA Monitoring** | | |
+| GET | `/sla/violations` | All SLA violations across channels |
+| GET | `/sla/channels` | All SLA-monitored channels |
+| GET | `/sla/channels/:id` | SLA status for a specific channel |
+| **Disputes** | | |
+| GET | `/disputes` | All disputes |
+| GET | `/disputes/:id` | Single dispute details |
+| POST | `/disputes/scan` | Scan channels for stale vouchers |
+| POST | `/channels/:id/dispute` | File a dispute for a channel |
+| POST | `/disputes/:id/resolve` | Resolve a dispute |
+| **Gateway** | | |
 | GET | `/gateway/resources` | x402-compatible resource listing |
 | POST | `/gateway/register` | Register a gated resource |
 
@@ -210,6 +268,20 @@ curl -X POST http://127.0.0.1:8080/pay \
   -H "Content-Type: application/json" \
   -d '{"channel_id":"abcdef01...","amount":100000000000000}'
 
+# Propose a negotiation with SLA terms
+curl -X POST http://127.0.0.1:8080/negotiate \
+  -H "Content-Type: application/json" \
+  -d '{"peer_id":"12D3KooW...","service_type":"compute","proposed_price":5000,
+       "channel_deposit":100000,"sla_terms":{"max_latency_ms":200,"max_error_rate":0.05}}'
+
+# Get a dynamic price quote
+curl -X POST http://127.0.0.1:8080/pricing/quote \
+  -H "Content-Type: application/json" \
+  -d '{"service_type":"inference","peer_id":"12D3KooW..."}'
+
+# Scan for disputes
+curl -X POST http://127.0.0.1:8080/disputes/scan
+
 # Close a channel cooperatively
 curl -X POST http://127.0.0.1:8080/channels/abcdef01.../close
 ```
@@ -217,7 +289,7 @@ curl -X POST http://127.0.0.1:8080/channels/abcdef01.../close
 ## Testing
 
 ```bash
-uv run pytest                       # All ~120 tests
+uv run pytest                       # All 539 tests
 uv run pytest -v                    # Verbose output
 uv run pytest tests/test_api.py     # Single test file
 uv run ruff check src/ tests/       # Lint
@@ -225,17 +297,31 @@ uv run ruff format src/ tests/      # Format
 ```
 
 | Test File | Count | Coverage |
-|-----------|-------|---------|
+|-----------|------:|---------|
+| test_protocol_edge_cases.py | 74 | Framing edge cases, malformed messages, overflow |
+| test_channel_edge_cases.py | 63 | State transitions, boundary conditions |
+| test_api_edge_cases.py | 52 | Error responses, validation, auth |
+| test_voucher_edge_cases.py | 45 | Signature edge cases, replay protection |
+| test_routing.py | 39 | Multi-hop pathfinding, reputation-weighted BFS |
+| test_manager_edge_cases.py | 39 | Channel manager concurrency, policy enforcement |
+| test_scale.py | 34 | Performance and scalability under load |
 | test_api.py | 24 | REST endpoints, CORS, error handling |
-| test_channel.py | 12 | State machine, voucher application |
-| test_protocol.py | 13 | Message codec, framing, wire validation |
-| test_discovery.py | 10 | Capability registry, search, pruning |
+| test_wallet_edge_cases.py | 21 | Wallet generation, key management, signing |
+| test_integration_advanced.py | 15 | Multi-agent scenarios, HTLC flows |
+| test_protocol.py | 13 | Message codec, wire validation |
 | test_negotiation.py | 12 | Negotiation state machine, history |
-| test_policies.py | 10 | Spend limits, rate limiting, whitelist/blacklist |
+| test_channel.py | 12 | State machine, voucher application |
+| test_policies.py | 11 | Spend limits, rate limiting, whitelist/blacklist |
 | test_reputation.py | 10 | Trust scoring, payment/HTLC tracking |
-| test_receipts.py | 10 | Signed receipt chains, verification |
+| test_discovery.py | 10 | Capability registry, search, pruning |
+| test_sla.py | 9 | SLA monitoring, violation detection |
+| test_receipts.py | 9 | Signed receipt chains, verification |
+| test_pricing.py | 9 | Dynamic pricing, trust discounts, congestion |
+| test_disputes.py | 8 | Dispute detection, resolution, reputation impact |
+| test_algorand.py | 7 | Algorand wallet, settlement, box decoding |
 | test_gateway.py | 5 | x402 resource gating, Bazaar format |
 | test_voucher.py | 4 | Signing, verification, serialization |
+| test_sla_negotiation.py | 4 | SLA terms in negotiations |
 | test_node.py | 4 | Identity generation, persistence |
 | test_pubsub.py | 3 | Topic definitions |
 | test_integration.py | 3 | End-to-end channel lifecycle |

@@ -18,8 +18,12 @@ from libp2p.pubsub.gossipsub import GossipSub
 from libp2p.pubsub.pubsub import Pubsub
 from multiaddr import Multiaddr
 
+from agentic_payments.chain.protocols import WalletProtocol, SettlementProtocol
 from agentic_payments.chain.wallet import Wallet
 from agentic_payments.config import Settings
+from agentic_payments.disputes.monitor import DisputeMonitor
+from agentic_payments.pricing.engine import PricingEngine, PricingPolicy
+from agentic_payments.sla.monitor import SLAMonitor
 from agentic_payments.discovery.models import AgentAdvertisement, AgentCapability
 from agentic_payments.discovery.registry import CapabilityRegistry
 from agentic_payments.gateway.x402 import GatedResource, X402Gateway
@@ -84,7 +88,8 @@ class AgentNode:
         self.config = config
         self.host: BasicHost | None = None
         self.peer_id: PeerID | None = None
-        self.wallet: Wallet | None = None
+        self.wallet: WalletProtocol | None = None
+        self.settlement: SettlementProtocol | None = None
         self.channel_manager: ChannelManager | None = None
         self.discovery: PeerDiscovery | None = None
         self.protocol_handler: PaymentProtocolHandler | None = None
@@ -117,6 +122,9 @@ class AgentNode:
         self.reputation_tracker: ReputationTracker = ReputationTracker()
         self.receipt_store: ReceiptStore = ReceiptStore()
         self.gateway: X402Gateway = X402Gateway()
+        self.sla_monitor: SLAMonitor = SLAMonitor()
+        self.pricing_engine: PricingEngine | None = None  # initialized after wallet
+        self.dispute_monitor: DisputeMonitor | None = None  # initialized after channel_manager
 
     def _require_started(self) -> None:
         """Guard: ensure the node has been started."""
@@ -139,11 +147,55 @@ class AgentNode:
         key_pair = load_or_generate_identity(self.config.node.identity_path)
         self.peer_id = peer_id_from_keypair(key_pair)
 
-        # --- Ethereum wallet ---
-        self.wallet = Wallet.generate()
+        # --- Wallet (chain-aware) ---
+        if self.config.chain_type == "algorand":
+            from agentic_payments.chain.algorand.wallet import AlgorandWallet
+            keypath = self.config.algorand.keystore_path
+            try:
+                self.wallet = AlgorandWallet.from_keyfile(keypath)
+                logger.info("algorand_wallet_loaded", address=self.wallet.address)
+            except (FileNotFoundError, ValueError):
+                self.wallet = AlgorandWallet.generate()
+                self.wallet.save_keyfile(keypath)
+                logger.info("algorand_wallet_generated", address=self.wallet.address)
+        else:
+            self.wallet = Wallet.generate()
+            logger.info("ethereum_wallet_generated", address=self.wallet.address)
+
         self.channel_manager = ChannelManager(
             self.wallet.address, policy_engine=self.policy_engine
         )
+
+        # --- Settlement (chain-aware, optional — requires RPC connectivity) ---
+        if self.config.chain_type == "algorand" and self.config.algorand.app_id:
+            try:
+                from agentic_payments.chain.algorand.settlement import AlgorandSettlement
+                self.settlement = AlgorandSettlement(
+                    algod_url=self.config.algorand.algod_url,
+                    algod_token=self.config.algorand.algod_token,
+                    app_id=self.config.algorand.app_id,
+                    wallet=self.wallet,
+                    indexer_url=self.config.algorand.indexer_url,
+                    indexer_token=self.config.algorand.indexer_token,
+                )
+                logger.info("algorand_settlement_ready", app_id=self.config.algorand.app_id)
+            except Exception as e:
+                logger.warning("algorand_settlement_unavailable", error=str(e))
+                self.settlement = None
+        elif self.config.chain_type == "ethereum" and self.config.ethereum.payment_channel_address:
+            try:
+                from web3 import Web3
+                from agentic_payments.chain.settlement import Settlement
+                w3 = Web3(Web3.HTTPProvider(self.config.ethereum.rpc_url))
+                self.settlement = Settlement(
+                    w3=w3,
+                    contract_address=self.config.ethereum.payment_channel_address,
+                    wallet=self.wallet,
+                )
+                logger.info("ethereum_settlement_ready", rpc=self.config.ethereum.rpc_url)
+            except Exception as e:
+                logger.warning("ethereum_settlement_unavailable", error=str(e))
+                self.settlement = None
         self.protocol_handler = PaymentProtocolHandler(
             channel_manager=self.channel_manager,
             htlc_manager=self.htlc_manager,
@@ -155,6 +207,26 @@ class AgentNode:
             on_negotiate_counter=self._on_negotiate_counter,
             on_negotiate_accept=self._on_negotiate_accept,
             on_negotiate_reject=self._on_negotiate_reject,
+        )
+
+        # --- Pricing, Disputes, SLA ---
+        self.pricing_engine = PricingEngine(
+            reputation_tracker=self.reputation_tracker,
+            channel_manager=self.channel_manager,
+            policy=PricingPolicy(
+                trust_discount_factor=self.config.pricing.trust_discount_factor,
+                congestion_premium_factor=self.config.pricing.congestion_premium_factor,
+                min_price=self.config.pricing.min_price,
+                max_price=self.config.pricing.max_price,
+                congestion_threshold=self.config.pricing.congestion_threshold,
+            ),
+        )
+        self.dispute_monitor = DisputeMonitor(
+            channel_manager=self.channel_manager,
+            reputation_tracker=self.reputation_tracker,
+            auto_challenge=self.config.dispute.auto_challenge,
+            scan_interval=self.config.dispute.scan_interval,
+            slash_percentage=self.config.dispute.slash_percentage,
         )
 
         # --- Configure gateway ---
@@ -190,7 +262,9 @@ class AgentNode:
                 "agent_node_started",
                 peer_id=self.peer_id.to_base58(),
                 addrs=self.listen_addrs,
-                eth_address=self.wallet.address,
+                chain=self.config.chain_type,
+                address=self.wallet.address,
+                settlement="active" if self.settlement else "off-chain only",
             )
 
             # --- GossipSub pubsub ---
@@ -251,6 +325,14 @@ class AgentNode:
                 self.broadcaster.on_message(
                     TOPIC_AGENT_CAPABILITIES,
                     self._handle_capability_announce,
+                )
+                self.broadcaster.on_message(
+                    TOPIC_AGENT_DISCOVERY,
+                    self._handle_discovery_announce,
+                )
+                self.broadcaster.on_message(
+                    TOPIC_PAYMENT_RECEIPTS,
+                    self._handle_receipt_announce,
                 )
 
                 # Publish our own capabilities
@@ -362,6 +444,7 @@ class AgentNode:
         peer_id: str,
         receiver: str,
         deposit: int,
+        sla_terms: Any = None,
     ) -> PaymentChannel:
         """Open a payment channel with a connected peer.
 
@@ -412,6 +495,13 @@ class AgentNode:
         # Announce channel on gossipsub for routing topology
         await self._announce_channel(channel)
 
+        # Register SLA monitoring if terms were provided
+        if sla_terms is not None:
+            from agentic_payments.negotiation.models import SLATerms
+            if isinstance(sla_terms, dict):
+                sla_terms = SLATerms(**sla_terms)
+            self.sla_monitor.register_channel(channel.channel_id.hex(), sla_terms)
+
         return channel
 
     async def pay(self, channel_id: bytes, amount: int) -> SignedVoucher:
@@ -459,10 +549,23 @@ class AgentNode:
             self._evict_stream(peer_id)
             logger.warning("pay_stream_error_retrying", peer_id=peer_id)
             voucher = await _attempt_pay()
+        except Exception:
+            response_time = time.time() - t0
+            self.reputation_tracker.record_payment_failed(peer_id)
+            # Record SLA failure
+            self.sla_monitor.record_request(
+                channel_id.hex(), response_time * 1000, success=False,
+            )
+            raise
 
         # Record reputation
         response_time = time.time() - t0
         self.reputation_tracker.record_payment_sent(peer_id, amount, response_time)
+
+        # Record SLA metrics
+        self.sla_monitor.record_request(
+            channel_id.hex(), response_time * 1000, success=True,
+        )
 
         # Create receipt
         prev_hash = self.receipt_store.get_previous_hash(channel_id)
@@ -979,6 +1082,42 @@ class AgentNode:
         except (KeyError, TypeError):
             logger.debug("invalid_capability_announce", from_peer=str(from_peer))
 
+    async def _handle_discovery_announce(self, data: dict, from_peer: PeerID) -> None:
+        """Handle agent discovery announcement from gossipsub.
+
+        Registers the announcing agent into the capability registry so it can
+        be found via the discovery API even before it publishes capabilities.
+        """
+        peer_id = data.get("peer_id", str(from_peer))
+        eth_address = data.get("eth_address", "")
+        addrs = data.get("addrs", [])
+        if peer_id and peer_id != self.peer_id.to_base58():
+            ad = AgentAdvertisement(
+                peer_id=peer_id,
+                eth_address=eth_address,
+                capabilities=[],
+                addrs=addrs,
+            )
+            self.capability_registry.register(ad)
+            logger.debug("discovery_peer_registered", peer_id=peer_id[:16])
+
+    async def _handle_receipt_announce(self, data: dict, from_peer: PeerID) -> None:
+        """Handle payment receipt from gossipsub.
+
+        Stores receipts from other agents for auditability and cross-verification.
+        """
+        receipt_data = data.get("data", data)
+        try:
+            receipt = SignedReceipt.from_dict(receipt_data)
+            self.receipt_store.add(receipt)
+            logger.debug(
+                "receipt_from_pubsub",
+                from_peer=str(from_peer)[:16],
+                channel=receipt.channel_id.hex()[:12],
+            )
+        except (KeyError, TypeError, ValueError):
+            logger.debug("invalid_receipt_announce", from_peer=str(from_peer))
+
     # ------------------------------------------------------------------
     # Negotiation callbacks (called by protocol handler)
     # ------------------------------------------------------------------
@@ -1051,7 +1190,8 @@ class AgentNode:
             )
 
     async def negotiate(
-        self, peer_id: str, service_type: str, proposed_price: int, channel_deposit: int
+        self, peer_id: str, service_type: str, proposed_price: int, channel_deposit: int,
+        sla_terms: Any = None,
     ) -> dict:
         """Initiate a negotiation with a peer. Auto-opens channel on accept."""
         self._require_started()
@@ -1061,5 +1201,6 @@ class AgentNode:
             service_type=service_type,
             proposed_price=proposed_price,
             channel_deposit=channel_deposit,
+            sla_terms=sla_terms,
         )
         return neg.to_dict()

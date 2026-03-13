@@ -9,9 +9,12 @@ import structlog
 from quart import request, websocket
 from quart_trio import QuartTrio
 
+from agentic_payments.disputes.models import DisputeReason, DisputeResolution
 from agentic_payments.gateway.x402 import GatedResource
+from agentic_payments.negotiation.models import SLATerms
 from agentic_payments.payments.channel import ChannelError
 from agentic_payments.policies.engine import WalletPolicy
+from agentic_payments.pricing.engine import PricingPolicy
 
 logger = structlog.get_logger(__name__)
 
@@ -116,6 +119,15 @@ def register_routes(app: QuartTrio) -> None:
                 "negotiations": {
                     "active": [n.to_dict() for n in node.negotiation_manager.list_active()],
                 } if hasattr(node, "negotiation_manager") else {},
+                "disputes": {
+                    "active": [d.to_dict() for d in node.dispute_monitor.list_disputes(pending_only=True)],
+                } if node.dispute_monitor else {},
+                "pricing": node.pricing_engine.policy.to_dict() if node.pricing_engine else {},
+                "sla": {
+                    "violations": len(node.sla_monitor.get_violations()),
+                    "non_compliant": node.sla_monitor.get_non_compliant_channels(),
+                },
+                "chain_type": node.config.chain_type,
             }
 
         prev_hash = ""
@@ -495,12 +507,16 @@ def register_routes(app: QuartTrio) -> None:
         if channel_deposit is None:
             return {"error": "channel_deposit is required"}, 400
 
+        sla_data = data.get("sla_terms")
+        sla_terms = SLATerms.from_dict(sla_data) if sla_data else None
+
         try:
             result = await node.negotiate(
                 peer_id=peer_id,
                 service_type=service_type,
                 proposed_price=int(proposed_price),
                 channel_deposit=int(channel_deposit),
+                sla_terms=sla_terms,
             )
             ms = (time.monotonic() - t0) * 1000
             _log_api("/negotiate", 201, ms, method="POST", detail=f"id={result['negotiation_id'][:12]}")
@@ -709,3 +725,184 @@ def register_routes(app: QuartTrio) -> None:
             ms = (time.monotonic() - t0) * 1000
             _log_api("/gateway/register", 400, ms, method="POST", error=str(e))
             return {"error": str(e)}, 400
+
+    # ── Pricing endpoints ──────────────────────────────────────
+
+    @app.route("/pricing/quote", methods=["POST"])
+    async def pricing_quote() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        base_price = data.get("base_price")
+        peer_id = data.get("peer_id")
+        if base_price is None or not peer_id:
+            return {"error": "base_price and peer_id are required"}, 400
+        try:
+            quote = node.pricing_engine.get_quote(int(base_price), peer_id)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/pricing/quote", 200, ms, method="POST", detail=f"final={quote['final_price']}")
+            return {"quote": quote}, 200
+        except Exception as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/pricing/quote", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    @app.route("/pricing/config")
+    async def pricing_config() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        result = node.pricing_engine.policy.to_dict()
+        _log_api("/pricing/config", 200, (time.monotonic() - t0) * 1000)
+        return result
+
+    @app.route("/pricing/config", methods=["PUT"])
+    async def update_pricing_config() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        try:
+            policy = PricingPolicy.from_dict(data)
+            node.pricing_engine.update_policy(policy)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/pricing/config", 200, ms, method="PUT")
+            return {"policy": policy.to_dict()}, 200
+        except Exception as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/pricing/config", 400, ms, method="PUT", error=str(e))
+            return {"error": str(e)}, 400
+
+    # ── Dispute endpoints ──────────────────────────────────────
+
+    @app.route("/disputes")
+    async def list_disputes() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        pending_only = request.args.get("pending") == "true"
+        disputes = node.dispute_monitor.list_disputes(pending_only=pending_only)
+        result = {"disputes": [d.to_dict() for d in disputes], "count": len(disputes)}
+        _log_api("/disputes", 200, (time.monotonic() - t0) * 1000, detail=f"{len(disputes)} disputes")
+        return result
+
+    @app.route("/disputes/<dispute_id>")
+    async def get_dispute(dispute_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        try:
+            dispute = node.dispute_monitor.get_dispute(dispute_id)
+            _log_api(f"/disputes/{dispute_id[:8]}", 200, (time.monotonic() - t0) * 1000)
+            return {"dispute": dispute.to_dict()}, 200
+        except KeyError:
+            _log_api(f"/disputes/{dispute_id[:8]}", 404, (time.monotonic() - t0) * 1000, error="not found")
+            return {"error": "Dispute not found"}, 404
+
+    @app.route("/disputes/scan", methods=["POST"])
+    async def scan_disputes() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        new_disputes = node.dispute_monitor.scan_channels()
+        result = {
+            "new_disputes": [d.to_dict() for d in new_disputes],
+            "count": len(new_disputes),
+        }
+        _log_api("/disputes/scan", 200, (time.monotonic() - t0) * 1000, method="POST", detail=f"{len(new_disputes)} new")
+        return result
+
+    @app.route("/channels/<channel_id>/dispute", methods=["POST"])
+    async def file_dispute(channel_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json() or {}
+        reason_str = data.get("reason", "stale_voucher")
+        try:
+            cid = bytes.fromhex(channel_id)
+            reason = DisputeReason(reason_str)
+            peer_id_str = node.peer_id.to_base58() if node.peer_id else ""
+            ch = node.channel_manager.get_channel(cid)
+            counterparty = ch.peer_id
+            dispute = node.dispute_monitor.file_dispute(
+                channel_id=cid, reason=reason,
+                initiated_by=peer_id_str, counterparty=counterparty,
+            )
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/channels/{channel_id[:8]}/dispute", 201, ms, method="POST")
+            return {"dispute": dispute.to_dict()}, 201
+        except (KeyError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/channels/{channel_id[:8]}/dispute", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    @app.route("/disputes/<dispute_id>/resolve", methods=["POST"])
+    async def resolve_dispute(dispute_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json() or {}
+        resolution_str = data.get("resolution", "settled")
+        try:
+            resolution = DisputeResolution(resolution_str)
+            dispute = node.dispute_monitor.resolve_dispute(dispute_id, resolution)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/disputes/{dispute_id[:8]}/resolve", 200, ms, method="POST")
+            return {"dispute": dispute.to_dict()}, 200
+        except (KeyError, ValueError) as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/disputes/{dispute_id[:8]}/resolve", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    # ── SLA endpoints ──────────────────────────────────────────
+
+    @app.route("/sla/violations")
+    async def sla_violations() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        violations = node.sla_monitor.get_violations()
+        result = {
+            "violations": [v.to_dict() for v in violations[:50]],
+            "count": len(violations),
+        }
+        _log_api("/sla/violations", 200, (time.monotonic() - t0) * 1000, detail=f"{len(violations)} violations")
+        return result
+
+    @app.route("/sla/channels")
+    async def sla_channels() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        channels = node.sla_monitor.list_monitored()
+        result = {"channels": channels, "count": len(channels)}
+        _log_api("/sla/channels", 200, (time.monotonic() - t0) * 1000)
+        return result
+
+    @app.route("/sla/channels/<channel_id>")
+    async def sla_channel_status(channel_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        status = node.sla_monitor.get_status(channel_id)
+        if status is None:
+            _log_api(f"/sla/channels/{channel_id[:8]}", 404, (time.monotonic() - t0) * 1000, error="not monitored")
+            return {"error": "Channel not being SLA-monitored"}, 404
+        _log_api(f"/sla/channels/{channel_id[:8]}", 200, (time.monotonic() - t0) * 1000)
+        return {"sla": status}, 200
+
+    # ── Chain info endpoint ────────────────────────────────────
+
+    @app.route("/chain")
+    async def chain_info() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        result = {
+            "chain_type": node.config.chain_type,
+            "ethereum": {
+                "rpc_url": node.config.ethereum.rpc_url,
+                "chain_id": node.config.ethereum.chain_id,
+            },
+            "algorand": {
+                "algod_url": node.config.algorand.algod_url,
+                "network": node.config.algorand.network,
+                "app_id": node.config.algorand.app_id,
+            },
+        }
+        _log_api("/chain", 200, (time.monotonic() - t0) * 1000)
+        return result

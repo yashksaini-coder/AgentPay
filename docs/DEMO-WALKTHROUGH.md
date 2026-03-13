@@ -115,47 +115,156 @@ curl -s -X POST "http://127.0.0.1:8080/channels/$CHANNEL/close" | python3 -m jso
 
 ---
 
-## Demo 2: Dashboard UI (Visual)
+## Demo 2: Automated API Demo (Screen Recording)
 
-**Audience**: Non-technical stakeholders, product demos, conference talks
+**Audience**: Anyone — run the script while screen-recording the terminal and dashboard
 **Duration**: ~3 minutes
-**What it shows**: Full visual workflow with real-time updates
+**What it shows**: Full lifecycle driven by the automated `scripts/demo.sh`
 
 ### Setup
 
 ```bash
-# Terminal 1 — Agent A
-uv run agentpay start --port 9000 --api-port 8080
+# Terminal 1 — Start agents + dashboard
+./scripts/dev.sh --agents 3
 
-# Terminal 2 — Agent B
-uv run agentpay start --port 9100 --ws-port 9101 --api-port 8081 \
-  --identity-path ~/.agentic-payments/identity2.key
+# Wait ~10 seconds for all agents to boot
 
-# Terminal 3 — Frontend
-cd frontend && npm run dev
+# Terminal 2 — Run the automated demo
+./scripts/demo.sh
 ```
 
-### Walkthrough
+### What the script does
 
-1. Open **http://localhost:3000**
-2. Both agent cards should show **Online** (green indicator)
-3. Point out: Peer IDs, ETH addresses, discovered peers
-4. **Open Channel** tab → Select "A → B", deposit `1000000000000000000` (1 ETH), click **Open Channel**
-5. Watch the channel appear in both agent cards
-6. **Send Payment** tab → Select the channel, amount `100000000000000` (0.0001 ETH), click **Send Payment**
-7. Send 3-5 payments, watch balances update in real time (4s polling)
-8. Show the channel state transition in the status badges
+The demo runs through 9 phases automatically with color-coded output:
 
-### Screen Recording Tips
+1. **Discovery** — Shows each agent's PeerID and ETH address, verifies mDNS peer discovery
+2. **Open Channels** — Opens A→B, B→C, and A→C payment channels with deposits
+3. **Micropayments** — Sends a burst of 3 payments per channel (10K, 25K, 50K wei) with nonce/cumulative tracking
+4. **Balances & Receipts** — Checks deposited/paid/remaining on all agents, shows receipt chain validity
+5. **Negotiation** — Agent A proposes compute service to B, B counters, A accepts
+6. **Trust Scores** — Displays reputation bars with trust percentages for each peer
+7. **Dynamic Pricing** — Gets a price quote showing trust discounts and congestion premiums
+8. **Dispute Detection** — Scans channels for stale vouchers
+9. **Channel Close** — Cooperatively closes all channels
 
-- Use a 1920x1080 window, dark theme is already default
-- Keep the browser inspector closed
-- Resize terminals to show only the key log lines
-- Record with OBS or native screen recorder
+### Options
+
+```bash
+./scripts/demo.sh --speed slow      # Longer pauses (for narrated recordings)
+./scripts/demo.sh --agents 5        # Use 5 agents instead of 3
+./scripts/demo.sh --skip-cleanup    # Leave channels open at the end
+```
+
+### Recording tips
+
+- Tile Terminal 1 (dev.sh) and Terminal 2 (demo.sh) side by side
+- Have the dashboard (localhost:3000) visible in a browser behind or alongside
+- The dashboard updates in real-time as the API script runs
+- Use OBS Studio or your OS screen recorder at 1920x1080
 
 ---
 
-## Demo 3: Full Stack with On-Chain Settlement
+## Demo 3: Dashboard UI (Click-by-Click Video Guide)
+
+**Audience**: Non-technical stakeholders, product demos, conference talks
+**Duration**: ~5 minutes
+**What it shows**: Every panel and interaction in the Next.js dashboard
+
+### Setup
+
+```bash
+./scripts/dev.sh --agents 3     # Start 3 agents + frontend
+```
+
+Open **http://localhost:3000** in your browser. Wait for nodes to appear in the graph.
+
+### Scene 1 — Overview (~30s)
+
+1. **Header bar** — Point out: `3/3 nodes` online (green dot), `0 ch`, `0 paid`
+2. **Center graph** — 3 nodes (Agent A, B, C) displayed as circles. Hover to see PeerID tooltips
+3. **Left sidebar** — Network stats (nodes, peers, channels), Financial summary (all zeroes), Trust & Discovery counts
+4. **Right sidebar** — Event log showing "Network monitor started"
+5. **Bottom hint** — "Click two nodes to connect or pay"
+
+### Scene 2 — Open a Payment Channel (~45s)
+
+1. **Click Agent A node** in the graph, then **click Agent B node**
+2. A popup appears: **"Open Channel — Agent A → Agent B"**
+3. The deposit field shows `1000000` — leave it or change it
+4. Click **"Open Channel"**
+5. Watch: Both nodes flash **blue** (executing), then **green** (success)
+6. A **line** appears between A and B in the graph
+7. Left sidebar updates: `1 active / 1` channels, deposited amount
+8. Event log: "Opened channel to Agent B — Deposit: 1,000,000 wei"
+9. Repeat: Click A → C and B → C to create a mesh
+
+### Scene 3 — Send Direct Payments (~45s)
+
+1. **Click the line** between Agent A and Agent B
+2. Popup: **"Send Payment — Agent A → Agent B"** with amount field
+3. Enter `50000`, click **"Send Payment"**
+4. Nodes flash blue → green, line animates
+5. Event log: "Sent 50,000 wei — Nonce: 1"
+6. Left sidebar: "Paid" counter increases
+7. Send 2-3 more payments — watch the nonce increment and cumulative amount grow
+8. **Payment Flow chart** in the left sidebar starts plotting amounts over time
+
+### Scene 4 — Multi-Hop Route Payment (~30s)
+
+1. Close channels between A and C (if any) so only A→B and B→C exist
+2. **Click Agent A** then **click Agent C** — popup shows **"Route Payment"** mode
+3. Enter amount `25000`, click **"Route Payment"**
+4. Watch: The animation traces A → B → C (multi-hop HTLC)
+5. All 3 nodes flash green on success
+6. Event log: "Routed 25,000 wei to Agent C (2 hops)"
+
+### Scene 5 — Trust Panels (~60s)
+
+Click through the **left sidebar tabs** below the stats:
+
+1. **Discovery tab** — Shows discovered agents with capabilities and Bazaar-compatible format
+2. **Negotiations tab** — Start a negotiation:
+   - Right sidebar → **Actions tab** → Negotiate section
+   - Select Agent A as proposer, Agent B as counterparty
+   - Service: `compute`, Price: `5000`, Deposit: `100000`
+   - Click **"Propose"**
+   - The negotiation appears in the timeline with status badges
+3. **Receipts tab** — Shows receipt chains per channel with validity checkmarks
+4. **Policies tab** — Shows wallet spend limits, rate limiting rules
+
+### Scene 6 — Right Sidebar Deep Dive (~45s)
+
+1. **Simulate tab** — Select topology (mesh/ring/star), set payment rounds and amounts
+   - Click **"Run Simulation"** — watch payments animate across the graph in batch
+   - Stats update in real-time: channels opened, payments sent, success rate
+2. **Actions tab** — Manual controls for:
+   - Open Channel (select sender/receiver/deposit)
+   - Route Payment (select source/destination/amount)
+   - Negotiate (propose/counter/accept between agents)
+3. **SLA Panel** — Shows SLA violations, latency thresholds
+4. **Disputes Panel** — Scan for stale vouchers, view dispute status
+5. **Pricing Panel** — Dynamic pricing config, trust discounts, congestion premiums
+
+### Scene 7 — Agent Management (~30s)
+
+1. **Right sidebar top** — "Agent Processes" section
+2. Click **"Add Node"** — a new Agent D appears in the graph
+3. It auto-discovers existing peers via mDNS
+4. Open channels to it, send payments — full participation
+5. Click the **stop button** on Agent D — node disappears, channels show as stale
+
+### Screen Recording Tips
+
+- **Resolution**: 1920x1080 or 2560x1440 (dashboard is responsive)
+- **Theme**: Dark theme is default — looks great on recordings
+- **Browser**: Maximized, inspector closed, no bookmarks bar
+- **Mouse**: Move slowly and deliberately so viewers can follow
+- **Pauses**: Hover on elements for 2-3 seconds before clicking
+- **Narration**: Use talking points from each scene description
+
+---
+
+## Demo 4: Full Stack with On-Chain Settlement
 
 **Audience**: Blockchain engineers, security reviewers
 **Duration**: ~5 minutes
@@ -189,21 +298,17 @@ uv run agentpay start --port 9100 --ws-port 9101 --api-port 8081 \
 
 ---
 
-## Demo 4: Run the Test Suite
+## Demo 5: Run the Test Suite
 
 **Audience**: Code reviewers, open source contributors
 **Duration**: ~1 minute
 
 ```bash
 # All 541 tests
-uv run pytest -v
+make test
 
-# Just the integration tests (end-to-end channel lifecycle)
-uv run pytest tests/test_integration.py -v
-
-# Lint + format check
-uv run ruff check src/ tests/
-uv run ruff format --check src/ tests/
+# Full CI pipeline (lint + format + typecheck + tests + frontend + contracts)
+make ci
 ```
 
 > **Talking point**: "541 tests covering the protocol codec, channel state machine, voucher cryptography, REST API, Algorand settlement, SLA monitoring, pricing, disputes, reputation, and full integration flows. All passing, lint clean."

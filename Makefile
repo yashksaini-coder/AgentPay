@@ -15,7 +15,7 @@ frontend-lint:
 frontend-build:
 	cd frontend && npm run build
 contracts-build:
-	cd contracts && forge install --no-commit && forge build
+	cd contracts && forge install --no-commit forge-std && forge build
 contracts-fmt:
 	cd contracts && forge fmt --check
 ci: lint fmt-check typecheck test frontend-lint frontend-build contracts-build contracts-fmt

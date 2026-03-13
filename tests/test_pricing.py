@@ -60,7 +60,7 @@ def test_compute_price_low_trust():
     assert trust < 0.5
     price = engine.compute_price(1000, "bad-peer")
     # Low trust → small discount → higher price than neutral
-    assert price > 850 or price == 850  # at least neutral or higher
+    assert price >= 850  # at least neutral or higher
 
 
 def test_get_quote_returns_breakdown():

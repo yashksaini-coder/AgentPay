@@ -89,6 +89,23 @@ def test_scan_channels_detects_stale_voucher():
     assert disputes[0].channel_id == cid
 
 
+def test_scan_channels_ignores_sender_side():
+    """Sender-side closing channels should NOT trigger disputes (only receiver detects stale)."""
+    mon, cm = _make_monitor(local_address=SENDER)
+    cid = _make_channel_id()
+    ch = _make_channel(cid, sender=SENDER, receiver=RECEIVER, total_deposit=100_000)
+    ch.accept()
+    ch.activate()
+    ch.nonce = 10
+    ch.total_paid = 5000
+    ch.request_close()
+    ch.nonce = 15  # higher nonce, but we're the sender — no dispute
+    cm.channels[cid] = ch
+
+    disputes = mon.scan_channels()
+    assert disputes == []
+
+
 def test_file_dispute_creates_dispute():
     mon, cm = _make_monitor()
     cid = _make_channel_id()

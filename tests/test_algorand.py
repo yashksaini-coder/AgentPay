@@ -22,17 +22,24 @@ def test_from_private_key_roundtrip():
     assert restored.private_key == wallet.private_key
 
 
-def test_sign_bytes_returns_bytes():
+def test_sign_bytes_returns_64_byte_signature():
     wallet = AlgorandWallet.generate()
     sig = wallet.sign_bytes(b"hello world")
     assert isinstance(sig, bytes)
-    assert len(sig) > 0
+    assert len(sig) == 64  # Ed25519 signature is always 64 bytes
 
 
 def test_mnemonic_phrase_returns_25_words():
     wallet = AlgorandWallet.generate()
     words = wallet.mnemonic_phrase.split()
     assert len(words) == 25
+
+
+def test_from_mnemonic_roundtrip():
+    wallet = AlgorandWallet.generate()
+    restored = AlgorandWallet.from_mnemonic(wallet.mnemonic_phrase)
+    assert restored.address == wallet.address
+    assert restored.private_key == wallet.private_key
 
 
 def test_save_and_load_keyfile(tmp_path: Path):

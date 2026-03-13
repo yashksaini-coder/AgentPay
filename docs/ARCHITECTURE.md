@@ -2,32 +2,6 @@
 
 > Decentralized off-chain payment channels between autonomous AI agents over libp2p + Ethereum/Algorand.
 
-## Table of Contents
-
-- [1. System Overview](#1-system-overview)
-- [2. Networking Layer](#2-networking-layer)
-- [3. Wire Protocol](#3-wire-protocol)
-- [4. Payment Channel Design](#4-payment-channel-design)
-- [5. On-Chain Settlement](#5-on-chain-settlement)
-- [6. Payment Flow (End-to-End)](#6-payment-flow-end-to-end)
-- [7. API Layer](#7-api-layer)
-- [8. Identity and Cryptography](#8-identity-and-cryptography)
-- [9. Persistence](#9-persistence)
-- [10. Concurrency Model](#10-concurrency-model)
-- [11. Security Properties](#11-security-properties)
-- [12. Agent Discovery Protocol](#12-agent-discovery-protocol)
-- [13. Negotiation Protocol](#13-negotiation-protocol)
-- [14. Wallet Policies](#14-wallet-policies)
-- [15. Reputation System](#15-reputation-system)
-- [16. SLA Monitoring](#16-sla-monitoring)
-- [17. Dynamic Pricing Engine](#17-dynamic-pricing-engine)
-- [18. Dispute Resolution](#18-dispute-resolution)
-- [19. Execution Reporting (Receipt Chains)](#19-execution-reporting-receipt-chains)
-- [20. x402 Resource Gateway](#20-x402-resource-gateway)
-- [21. Multi-Chain Settlement](#21-multi-chain-settlement)
-- [22. Diagrams](#22-diagrams)
-- [23. Design Decisions and Tradeoffs](#23-design-decisions-and-tradeoffs)
-
 ---
 
 ## 1. System Overview
@@ -729,6 +703,11 @@ Excalidraw diagrams are available in [`/diagrams/`](../diagrams/):
 | Channel State Machine | [`state-machine.excalidraw`](../diagrams/state-machine.excalidraw) | 6-state lifecycle: PROPOSED → ACTIVE → SETTLED |
 | Negotiation + Payment Flow | [`negotiation-flow.excalidraw`](../diagrams/negotiation-flow.excalidraw) | Full flow: discovery → negotiate → open → pay → close with SLA tracking |
 | Trust Architecture | [`trust-architecture.excalidraw`](../diagrams/trust-architecture.excalidraw) | Reputation, SLA, disputes, policies, pricing interactions |
+| Module Architecture | [`module-architecture.excalidraw`](../diagrams/module-architecture.excalidraw) | Code module dependencies across 5 layers: interface, core, network, business, trust, settlement |
+| Wire Protocol | [`wire-protocol.excalidraw`](../diagrams/wire-protocol.excalidraw) | All 13 message types with fields, framing format, and message flow |
+| HTLC Multi-Hop Routing | [`htlc-routing.excalidraw`](../diagrams/htlc-routing.excalidraw) | Multi-hop payment via intermediaries: propose → fulfill → cancel with BFS pathfinding |
+| Settlement Flows | [`settlement-flow.excalidraw`](../diagrams/settlement-flow.excalidraw) | Ethereum vs Algorand settlement comparison: contracts, signatures, box storage |
+| Receipt Chain | [`receipt-chain.excalidraw`](../diagrams/receipt-chain.excalidraw) | Hash-chained signed receipts: structure, verification, GossipSub broadcast |
 
 PNG exports are in [`docs/images/`](images/). To edit, open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com).
 

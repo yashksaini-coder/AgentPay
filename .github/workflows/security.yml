@@ -3,6 +3,7 @@ name: Security
 on:
   schedule:
     - cron: "0 8 * * 1" # Monday 08:00 UTC
+  workflow_dispatch:
   push:
     branches: [master]
     paths:

@@ -1,0 +1,54 @@
+name: Security
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Monday 08:00 UTC
+  push:
+    branches: [master]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - frontend/package-lock.json
+      - "contracts/**"
+  pull_request:
+    branches: [master]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - frontend/package-lock.json
+      - "contracts/**"
+
+jobs:
+  python-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv export --no-hashes -o /tmp/requirements.txt
+      - uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: /tmp/requirements.txt
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm audit --audit-level=high
+
+  slither:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          target: contracts/
+          fail-on: high

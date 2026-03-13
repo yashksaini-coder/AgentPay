@@ -66,6 +66,9 @@ class PaymentChannel:
     # On-chain settlement info
     on_chain_tx: str = ""  # Settlement tx hash (if settled on-chain)
     token_address: str = ""  # ERC-20 token address (empty = native ETH)
+    chain_type: str = "ethereum"  # "ethereum" or "algorand"
+    sla_terms: dict | None = None  # Negotiated SLA terms (from negotiation)
+    dispute_reason: str = ""  # Reason if disputed
 
     def __post_init__(self) -> None:
         """Validate channel fields at construction time."""
@@ -294,4 +297,10 @@ class PaymentChannel:
             d["on_chain_tx"] = self.on_chain_tx
         if self.token_address:
             d["token_address"] = self.token_address
+        if self.chain_type != "ethereum":
+            d["chain_type"] = self.chain_type
+        if self.sla_terms:
+            d["sla_terms"] = self.sla_terms
+        if self.dispute_reason:
+            d["dispute_reason"] = self.dispute_reason
         return d

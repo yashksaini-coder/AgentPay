@@ -17,6 +17,8 @@ dependencies = [
     "hypercorn[trio]>=0.17",
     "asyncpg>=0.30",
     "databases[asyncpg]>=0.9",
+    "py-algorand-sdk>=2.6",
+    "pynacl>=1.5",
 ]
 
 [dependency-groups]

@@ -95,6 +95,21 @@ class SignedReceipt:
             signature=signed.signature,
         )
 
+    @staticmethod
+    def from_dict(data: dict) -> SignedReceipt:
+        """Deserialize a receipt from a dictionary (e.g. from pubsub)."""
+        return SignedReceipt(
+            receipt_id=bytes.fromhex(data["receipt_id"]),
+            channel_id=bytes.fromhex(data["channel_id"]),
+            nonce=data["nonce"],
+            amount=data["amount"],
+            timestamp=data["timestamp"],
+            sender=data["sender"],
+            receiver=data["receiver"],
+            previous_receipt_hash=bytes.fromhex(data["previous_receipt_hash"]),
+            signature=bytes.fromhex(data["signature"]),
+        )
+
     def verify(self, expected_signer: str) -> bool:
         """Verify the receipt signature against the expected signer address."""
         try:

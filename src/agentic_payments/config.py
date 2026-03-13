@@ -135,6 +135,50 @@ class GatewayConfig(BaseSettings):
     )
 
 
+class AlgorandConfig(BaseSettings):
+    """Algorand / algosdk configuration for cross-chain settlement."""
+
+    model_config = SettingsConfigDict(env_prefix="ALGO_")
+
+    algod_url: str = Field(default="http://localhost:4001", description="Algorand node URL")
+    algod_token: str = Field(
+        default="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        description="Algorand node API token",
+    )
+    indexer_url: str = Field(default="", description="Algorand indexer URL (optional)")
+    indexer_token: str = Field(default="", description="Algorand indexer API token")
+    app_id: int = Field(default=0, ge=0, description="Deployed payment channel application ID")
+    network: Literal["testnet", "mainnet", "localnet"] = Field(
+        default="localnet", description="Algorand network"
+    )
+    keystore_path: Path = Field(
+        default=Path("~/.agentic-payments/algorand_key"),
+        description="Algorand key file path",
+    )
+
+
+class PricingConfig(BaseSettings):
+    """Dynamic pricing configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="PRICING_")
+
+    trust_discount_factor: float = Field(default=0.3, ge=0, le=1.0, description="Max trust discount (30%)")
+    congestion_premium_factor: float = Field(default=0.5, ge=0, le=2.0, description="Max congestion premium (50%)")
+    min_price: int = Field(default=0, ge=0, description="Price floor in wei")
+    max_price: int = Field(default=0, ge=0, description="Price ceiling in wei (0=unlimited)")
+    congestion_threshold: int = Field(default=20, ge=1, description="Active channels at full congestion")
+
+
+class DisputeConfig(BaseSettings):
+    """Dispute resolution configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="DISPUTE_")
+
+    auto_challenge: bool = Field(default=True, description="Auto-file challenges for stale vouchers")
+    scan_interval: int = Field(default=30, ge=5, description="Channel scan interval in seconds")
+    slash_percentage: float = Field(default=0.10, ge=0, le=1.0, description="Slash percentage of deposit")
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -143,11 +187,17 @@ class Settings(BaseSettings):
     node: NodeConfig = Field(default_factory=NodeConfig)
     channel: ChannelConfig = Field(default_factory=ChannelConfig)
     ethereum: EthereumConfig = Field(default_factory=EthereumConfig)
+    algorand: AlgorandConfig = Field(default_factory=AlgorandConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
+    pricing: PricingConfig = Field(default_factory=PricingConfig)
+    dispute: DisputeConfig = Field(default_factory=DisputeConfig)
+    chain_type: Literal["ethereum", "algorand"] = Field(
+        default="ethereum", description="Primary chain for settlement"
+    )
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO", description="Log level"
     )

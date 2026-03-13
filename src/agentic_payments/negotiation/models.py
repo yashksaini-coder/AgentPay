@@ -1,4 +1,4 @@
-"""Negotiation state models."""
+"""Negotiation state models with machine-readable SLA terms."""
 
 from __future__ import annotations
 
@@ -19,6 +19,46 @@ class NegotiationState(StrEnum):
 
 
 @dataclass
+class SLATerms:
+    """Machine-readable Service Level Agreement terms.
+
+    Attached to negotiations so agents can agree on quality-of-service
+    guarantees alongside pricing.
+    """
+
+    max_latency_ms: int = 0  # Max response latency in ms (0=unbounded)
+    min_availability: float = 0.0  # Min uptime fraction 0.0-1.0
+    max_error_rate: float = 1.0  # Max acceptable error rate 0.0-1.0
+    min_throughput: int = 0  # Min requests per second (0=unbounded)
+    penalty_rate: int = 0  # Wei penalty per SLA violation
+    measurement_window: int = 3600  # Window for measuring compliance (seconds)
+    dispute_threshold: int = 3  # Violations before auto-dispute
+
+    def to_dict(self) -> dict:
+        return {
+            "max_latency_ms": self.max_latency_ms,
+            "min_availability": self.min_availability,
+            "max_error_rate": self.max_error_rate,
+            "min_throughput": self.min_throughput,
+            "penalty_rate": self.penalty_rate,
+            "measurement_window": self.measurement_window,
+            "dispute_threshold": self.dispute_threshold,
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> SLATerms:
+        return SLATerms(
+            max_latency_ms=d.get("max_latency_ms", 0),
+            min_availability=d.get("min_availability", 0.0),
+            max_error_rate=d.get("max_error_rate", 1.0),
+            min_throughput=d.get("min_throughput", 0),
+            penalty_rate=d.get("penalty_rate", 0),
+            measurement_window=d.get("measurement_window", 3600),
+            dispute_threshold=d.get("dispute_threshold", 3),
+        )
+
+
+@dataclass
 class NegotiationEvent:
     """A single event in the negotiation history."""
 
@@ -26,14 +66,18 @@ class NegotiationEvent:
     price: int
     by: str  # peer_id of actor
     timestamp: float = field(default_factory=time.time)
+    sla_terms: SLATerms | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "action": self.action,
             "price": self.price,
             "by": self.by,
             "timestamp": self.timestamp,
         }
+        if self.sla_terms is not None:
+            d["sla_terms"] = self.sla_terms.to_dict()
+        return d
 
 
 @dataclass
@@ -52,6 +96,7 @@ class Negotiation:
     channel_id: str | None = None
     history: list[NegotiationEvent] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
+    sla_terms: SLATerms | None = None
 
     def __post_init__(self) -> None:
         if self.current_price == 0:
@@ -66,7 +111,7 @@ class Negotiation:
         return self.is_active and time.time() > self.timeout
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "negotiation_id": self.negotiation_id,
             "initiator": self.initiator,
             "responder": self.responder,
@@ -80,3 +125,6 @@ class Negotiation:
             "history": [e.to_dict() for e in self.history],
             "created_at": self.created_at,
         }
+        if self.sla_terms is not None:
+            d["sla_terms"] = self.sla_terms.to_dict()
+        return d

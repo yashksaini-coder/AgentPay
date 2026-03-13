@@ -11,6 +11,7 @@ from agentic_payments.negotiation.models import (
     Negotiation,
     NegotiationEvent,
     NegotiationState,
+    SLATerms,
 )
 
 logger = structlog.get_logger(__name__)
@@ -32,8 +33,9 @@ class NegotiationManager:
         proposed_price: int,
         channel_deposit: int,
         timeout: float | None = None,
+        sla_terms: SLATerms | None = None,
     ) -> Negotiation:
-        """Create a new negotiation proposal."""
+        """Create a new negotiation proposal with optional SLA terms."""
         nid = os.urandom(16).hex()
         if timeout is None:
             timeout = time.time() + DEFAULT_TIMEOUT
@@ -46,23 +48,28 @@ class NegotiationManager:
             proposed_price=proposed_price,
             channel_deposit=channel_deposit,
             timeout=timeout,
+            sla_terms=sla_terms,
         )
         neg.history.append(
-            NegotiationEvent(action="propose", price=proposed_price, by=initiator)
+            NegotiationEvent(action="propose", price=proposed_price, by=initiator, sla_terms=sla_terms)
         )
         self._negotiations[nid] = neg
         logger.info("negotiation_proposed", id=nid[:12], service=service_type, price=proposed_price)
         return neg
 
-    def counter(self, negotiation_id: str, by: str, counter_price: int) -> Negotiation:
-        """Submit a counter-offer."""
+    def counter(
+        self, negotiation_id: str, by: str, counter_price: int, sla_terms: SLATerms | None = None,
+    ) -> Negotiation:
+        """Submit a counter-offer with optional SLA term modifications."""
         neg = self._get_active(negotiation_id)
         if by not in (neg.initiator, neg.responder):
             raise ValueError("Only participants can counter")
         neg.state = NegotiationState.COUNTERED
         neg.current_price = counter_price
+        if sla_terms is not None:
+            neg.sla_terms = sla_terms
         neg.history.append(
-            NegotiationEvent(action="counter", price=counter_price, by=by)
+            NegotiationEvent(action="counter", price=counter_price, by=by, sla_terms=sla_terms)
         )
         logger.info("negotiation_countered", id=negotiation_id[:12], price=counter_price)
         return neg

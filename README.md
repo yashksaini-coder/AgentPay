@@ -10,13 +10,13 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776ab?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-d7ff64?style=flat-square&logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
 
-[Quick Start](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [CLI & API](docs/COMMANDS.md) · [Demo](docs/DEMO-WALKTHROUGH.md) · [Contributing](docs/CONTRIBUTING.md)
+[Quick Start](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [CLI & API](docs/COMMANDS.md) · [Ecosystem Alignment](docs/ECOSYSTEM-ALIGNMENT.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
 ---
 
-Agents discover each other via **mDNS**, negotiate service terms over **libp2p streams**, exchange **signed payment vouchers** off-chain, and settle on **Ethereum** or **Algorand**. Designed for the [ARIA Scaling Trust](https://www.aria.org.uk/programme/scaling-trust/) programme (Track 2 — Tooling).
+Agents discover each other via **mDNS**, negotiate service terms over **libp2p streams**, exchange **Filecoin-style signed payment vouchers** off-chain, and settle on **Ethereum** or **Algorand**. Built for the [Filecoin Agents](https://filecoin.cloud/agents) ecosystem, [ARIA Scaling Trust](https://www.aria.org.uk/programme/scaling-trust/) programme, and [PL Genesis](https://www.plgenesis.com/) hackathon.
 
 <div align="center">
   <img src="docs/images/system-architecture.png" alt="System Architecture" width="800" />
@@ -125,13 +125,13 @@ agentpay pricing quote --service inference                         # Dynamic pri
 | **Pricing** | `/pricing/quote` `/pricing/config` | Dynamic price quotes with trust discounts and congestion premiums |
 | **SLA** | `/sla/violations` `/sla/channels` | Per-channel latency/error-rate monitoring, violation detection |
 | **Disputes** | `/disputes` `/disputes/scan` `/channels/:id/dispute` | Stale voucher detection, dispute filing and resolution |
-| **Gateway** | `/gateway/resources` `/gateway/register` | x402-compatible resource gating |
+| **Gateway** | `/gateway/resources` `/gateway/register` `/gateway/access` `/gateway/log` | x402 payment-gated resource access with verification |
 
 ## Development
 
 ```bash
 make ci            # Run full CI pipeline locally (lint + format + typecheck + test + frontend + contracts)
-make test          # 541 tests
+make test          # 549 tests
 make lint          # ruff check
 make fmt           # ruff format (auto-fix)
 make typecheck     # mypy

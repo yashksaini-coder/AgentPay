@@ -46,6 +46,11 @@ contracts/lib/
 # Excalidraw source files (PNG exports in docs/images/ are the committed assets)
 diagrams/
 
+# Internal docs (kept local, not tracked)
+docs/PRESENTATION-OUTLINE.md
+docs/VIDEO-SCRIPT.md
+docs/DEMO-WALKTHROUGH.md
+
 # Data
 *.db
 *.sqlite3

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import structlog
 import trio
 
@@ -14,7 +16,7 @@ structlog.configure(
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.dev.ConsoleRenderer(),
     ],
-    wrapper_class=structlog.make_filtering_bound_logger(structlog.get_level_from_name("INFO")),
+    wrapper_class=structlog.make_filtering_bound_logger(20),
     logger_factory=structlog.PrintLoggerFactory(),
 )
 
@@ -28,10 +30,12 @@ async def run_two_agents() -> None:
     config_a.node.port = 9000
     config_a.api.port = 8080
 
-    # Agent B config (payee)
+    # Agent B config (payee) — separate identity to avoid PeerID collision
     config_b = Settings()
     config_b.node.port = 9100
+    config_b.node.ws_port = 9101
     config_b.api.port = 8081
+    config_b.node.identity_path = Path("~/.agentic-payments/identity2.key")
 
     async with trio.open_nursery() as nursery:
         agent_a = AgentNode(config_a)

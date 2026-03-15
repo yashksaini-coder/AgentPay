@@ -64,3 +64,6 @@ frontend/tsconfig.tsbuildinfo
 
 # Claude Code
 .claude/
+
+# Forge broadcast artifacts
+contracts/broadcast/

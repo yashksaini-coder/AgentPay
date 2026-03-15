@@ -121,9 +121,17 @@ class X402Gateway:
     - Bazaar-format export for ecosystem discovery
     """
 
-    def __init__(self, provider_id: str = "", wallet_address: str = "") -> None:
+    def __init__(
+        self,
+        provider_id: str = "",
+        wallet_address: str = "",
+        network: str = "ethereum-sepolia",
+        asset: str = "native",
+    ) -> None:
         self.provider_id = provider_id
         self.wallet_address = wallet_address
+        self._network = network  # x402 network identifier
+        self._asset = asset  # x402 asset (native, ERC-20 address, etc.)
         self._resources: dict[str, GatedResource] = {}  # path -> resource
         self._access_log: list[AccessLog] = []
         self._channel_manager: Any = None  # Set after node init
@@ -248,39 +256,60 @@ class X402Gateway:
         self._access_log.append(AccessLog(path, sender, decision, price))
 
     def _payment_required_meta(self, resource: GatedResource) -> dict:
-        """Build 402 Payment Required response metadata."""
+        """Build x402 V1 spec-compliant 402 Payment Required response.
+
+        Follows the x402 standard: https://www.x402.org/
+        The `accepts` array contains PaymentRequirement objects with
+        scheme, network, maxAmountRequired, payTo, asset, and resource fields.
+        """
         return {
-            "status": 402,
-            "x402": {
-                "price": resource.price,
-                "payment_types": [resource.payment_type],
-                "provider": self.provider_id,
-                "wallet": self.wallet_address,
-                "path": resource.path,
-                "description": resource.description,
-            },
+            "x402Version": 1,
+            "accepts": [
+                {
+                    "scheme": "exact",
+                    "network": self._network,
+                    "maxAmountRequired": str(resource.price),
+                    "payTo": self.wallet_address,
+                    "asset": self._asset or "native",
+                    "resource": resource.path,
+                    "description": resource.description,
+                    "maxTimeoutSeconds": 30,
+                    "mimeType": "application/json",
+                    "extra": {
+                        "payment_type": resource.payment_type,
+                        "min_trust_score": resource.min_trust_score,
+                        "provider_id": self.provider_id,
+                    },
+                }
+            ],
         }
 
     def to_bazaar_format(self) -> dict:
         """Export resources in x402 Bazaar-compatible format.
 
-        Compatible with the Algorand x402 ecosystem and Filecoin Onchain Cloud
-        agent discovery protocols.
+        Follows the Bazaar discovery layer spec used by Algorand x402
+        and Coinbase x402 facilitators.
         """
         return {
             "provider": {
                 "id": self.provider_id,
                 "wallet": self.wallet_address,
-                "protocol": "agentpay",
+                "network": self._network,
             },
             "resources": [
                 {
-                    "path": r.path,
-                    "price": r.price,
+                    "scheme": "exact",
+                    "network": self._network,
+                    "maxAmountRequired": str(r.price),
+                    "payTo": self.wallet_address,
+                    "asset": self._asset or "native",
+                    "resource": r.path,
                     "description": r.description,
-                    "payment_types": [r.payment_type],
-                    "x402_compatible": r.payment_type == "x402",
-                    "min_trust_score": r.min_trust_score,
+                    "mimeType": "application/json",
+                    "extra": {
+                        "payment_type": r.payment_type,
+                        "min_trust_score": r.min_trust_score,
+                    },
                 }
                 for r in self._resources.values()
             ],

@@ -69,30 +69,30 @@ final_price = max(base_price * multiplier, floor)
 
 ---
 
-## Bazaar / x402 Compatibility
+## x402 Protocol Compliance
 
-AgentPay exports agent capabilities in the Algorand x402 Bazaar-compatible format:
+AgentPay implements the [x402 V1 standard](https://www.x402.org/) for payment-gated resource access. The 402 response follows the spec-compliant format:
 
 ```json
 {
-  "provider": {
-    "id": "<peer_id>",
-    "wallet": "<eth_address>",
-    "protocol": "agentpay"
-  },
-  "resources": [
+  "x402Version": 1,
+  "accepts": [
     {
-      "path": "/api/v1/inference",
-      "price": 1000,
+      "scheme": "exact",
+      "network": "ethereum-sepolia",
+      "maxAmountRequired": "1000",
+      "payTo": "0xAbC...",
+      "asset": "native",
+      "resource": "/api/v1/inference",
       "description": "LLM inference",
-      "payment_types": ["payment-channel"],
-      "x402_compatible": false
+      "maxTimeoutSeconds": 30,
+      "mimeType": "application/json"
     }
   ]
 }
 ```
 
-Used by `GET /gateway/resources`, `GET /discovery/resources`, and GossipSub capability broadcasts.
+The Bazaar discovery format uses the same schema, enabling indexing by Algorand, Coinbase, and Filecoin facilitators. Used by `GET /gateway/resources`, `GET /discovery/resources`, and GossipSub capability broadcasts.
 
 ---
 
@@ -100,9 +100,9 @@ Used by `GET /gateway/resources`, `GET /discovery/resources`, and GossipSub capa
 
 | Chain | Contract | Status | Token |
 |-------|---------|--------|-------|
-| **Ethereum** | `PaymentChannel.sol` (Solidity ^0.8) | Production | ETH + ERC-20 |
-| **Algorand** | ARC-4 application + box storage | Production | ALGO |
-| **Filecoin** | Same `PaymentChannel.sol` deployed on FEVM | Production | FIL (via FEVM) |
+| **Ethereum** | `PaymentChannel.sol` (Solidity ^0.8) | Implemented (local Anvil verified) | ETH + ERC-20 |
+| **Algorand** | ARC-4 application + box storage | Implemented (testnet ready) | ALGO |
+| **Filecoin** | Same `PaymentChannel.sol` on FEVM | Implemented (Calibration ready) | FIL (via FEVM) |
 
 The settlement layer is chain-agnostic by design (`chain/protocols.py` defines `WalletProtocol` and `SettlementProtocol` interfaces). Each chain implements these interfaces independently.
 

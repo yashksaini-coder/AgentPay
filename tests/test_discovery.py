@@ -49,8 +49,11 @@ def test_advertisement_bazaar_format():
     )
     bazaar = ad.to_bazaar_format()
     assert bazaar["provider"]["id"] == "QmPeer1"
-    assert bazaar["resources"][0]["type"] == "llm"
-    assert "payment-channel" in bazaar["resources"][0]["payment_types"]
+    assert bazaar["provider"]["network"] == "ethereum-sepolia"
+    res = bazaar["resources"][0]
+    assert res["scheme"] == "exact"
+    assert res["maxAmountRequired"] == "100"
+    assert res["payTo"] == "0xabc"
 
 
 def test_advertisement_from_dict():

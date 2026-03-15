@@ -33,15 +33,18 @@ def test_get_resource():
 
 
 def test_bazaar_format():
-    gw = X402Gateway(provider_id="QmA", wallet_address="0xabc")
+    gw = X402Gateway(provider_id="QmA", wallet_address="0xabc", network="ethereum-sepolia")
     gw.register_resource(GatedResource(path="/api/infer", price=1000, description="LLM"))
     gw.register_resource(GatedResource(path="/api/image", price=5000, payment_type="x402"))
     bazaar = gw.to_bazaar_format()
     assert bazaar["provider"]["id"] == "QmA"
-    assert bazaar["provider"]["protocol"] == "agentpay"
+    assert bazaar["provider"]["network"] == "ethereum-sepolia"
     assert len(bazaar["resources"]) == 2
-    x402_resource = [r for r in bazaar["resources"] if r["path"] == "/api/image"][0]
-    assert x402_resource["x402_compatible"] is True
+    res = bazaar["resources"][0]
+    assert "scheme" in res
+    assert res["scheme"] == "exact"
+    assert "maxAmountRequired" in res
+    assert "payTo" in res
 
 
 def test_gated_resource_from_dict():
@@ -66,14 +69,20 @@ def test_verify_access_ungated_path():
 
 
 def test_verify_access_no_proof_returns_402():
-    """Gated path with no payment proof returns PAYMENT_REQUIRED."""
-    gw = X402Gateway(provider_id="QmA", wallet_address="0xabc")
+    """Gated path with no payment proof returns x402 V1 spec-compliant 402."""
+    gw = X402Gateway(provider_id="QmA", wallet_address="0xabc", network="ethereum-sepolia")
     gw.register_resource(GatedResource(path="/api/infer", price=1000))
     decision, meta = gw.verify_access("/api/infer")
     assert decision == AccessDecision.PAYMENT_REQUIRED
-    assert meta["status"] == 402
-    assert meta["x402"]["price"] == 1000
-    assert meta["x402"]["wallet"] == "0xabc"
+    # x402 V1 spec compliance
+    assert meta["x402Version"] == 1
+    assert len(meta["accepts"]) == 1
+    req = meta["accepts"][0]
+    assert req["scheme"] == "exact"
+    assert req["network"] == "ethereum-sepolia"
+    assert req["maxAmountRequired"] == "1000"
+    assert req["payTo"] == "0xabc"
+    assert req["resource"] == "/api/infer"
 
 
 def test_verify_access_insufficient_amount():

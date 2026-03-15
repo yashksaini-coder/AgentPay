@@ -49,20 +49,30 @@ class AgentAdvertisement:
             "last_seen": self.last_seen,
         }
 
-    def to_bazaar_format(self) -> dict:
-        """Convert to Algorand x402 Bazaar-compatible resource listing."""
+    def to_bazaar_format(self, network: str = "ethereum-sepolia") -> dict:
+        """Convert to x402 Bazaar-compatible resource listing.
+
+        Follows the Bazaar discovery layer spec for agent service
+        cataloging. Compatible with Algorand x402, Coinbase x402,
+        and Filecoin facilitators.
+        """
         return {
             "provider": {
                 "id": self.peer_id,
                 "wallet": self.eth_address,
+                "network": network,
                 "endpoints": self.addrs,
             },
             "resources": [
                 {
-                    "type": c.service_type,
-                    "price": c.price_per_call,
+                    "scheme": "exact",
+                    "network": network,
+                    "maxAmountRequired": str(c.price_per_call),
+                    "payTo": self.eth_address,
+                    "asset": "native",
+                    "resource": f"/services/{c.service_type}",
                     "description": c.description,
-                    "payment_types": ["payment-channel", "htlc"],
+                    "mimeType": "application/json",
                 }
                 for c in self.capabilities
             ],

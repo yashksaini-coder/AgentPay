@@ -167,6 +167,45 @@ class AlgorandConfig(BaseSettings):
     )
 
 
+class FilecoinConfig(BaseSettings):
+    """Filecoin / FEVM configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="FIL_")
+
+    rpc_url: str = Field(
+        default="https://api.calibration.node.glif.io/rpc/v1",
+        description="Filecoin Lotus JSON-RPC URL",
+    )
+    chain_id: int = Field(default=314159, ge=1, description="Chain ID (314=Mainnet, 314159=Calibration)")
+    keystore_path: Path = Field(
+        default=Path("~/.agentic-payments/filecoin_keystore"),
+        description="Filecoin keystore file path",
+    )
+    payment_channel_address: str = Field(
+        default="", description="PaymentChannel contract address on FEVM"
+    )
+    network: Literal["mainnet", "calibration", "localnet"] = Field(
+        default="calibration", description="Filecoin network"
+    )
+
+
+class StorageConfig(BaseSettings):
+    """IPFS content-addressed storage configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="STORAGE_")
+
+    ipfs_api_url: str = Field(
+        default="http://localhost:5001", description="IPFS HTTP API URL"
+    )
+    auto_pin_receipts: bool = Field(
+        default=False, description="Automatically pin receipts to IPFS on creation"
+    )
+    auto_pin_capabilities: bool = Field(
+        default=False, description="Automatically pin capability advertisements to IPFS"
+    )
+    enabled: bool = Field(default=False, description="Enable IPFS storage integration")
+
+
 class PricingConfig(BaseSettings):
     """Dynamic pricing configuration."""
 
@@ -208,6 +247,8 @@ class Settings(BaseSettings):
     channel: ChannelConfig = Field(default_factory=ChannelConfig)
     ethereum: EthereumConfig = Field(default_factory=EthereumConfig)
     algorand: AlgorandConfig = Field(default_factory=AlgorandConfig)
+    filecoin: FilecoinConfig = Field(default_factory=FilecoinConfig)
+    storage: StorageConfig = Field(default_factory=StorageConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
@@ -215,7 +256,7 @@ class Settings(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     pricing: PricingConfig = Field(default_factory=PricingConfig)
     dispute: DisputeConfig = Field(default_factory=DisputeConfig)
-    chain_type: Literal["ethereum", "algorand"] = Field(
+    chain_type: Literal["ethereum", "algorand", "filecoin"] = Field(
         default="ethereum", description="Primary chain for settlement"
     )
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(

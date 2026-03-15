@@ -159,6 +159,17 @@ class AgentNode:
                 self.wallet = AlgorandWallet.generate()
                 self.wallet.save_keyfile(keypath)
                 logger.info("algorand_wallet_generated", address=self.wallet.address)
+        elif self.config.chain_type == "filecoin":
+            from agentic_payments.chain.filecoin.wallet import FilecoinWallet
+
+            keypath = self.config.filecoin.keystore_path
+            try:
+                self.wallet = FilecoinWallet.from_keyfile(keypath)
+                logger.info("filecoin_wallet_loaded", address=self.wallet.address)
+            except (FileNotFoundError, ValueError):
+                self.wallet = FilecoinWallet.generate()
+                self.wallet.save_keyfile(keypath)
+                logger.info("filecoin_wallet_generated", address=self.wallet.address)
         else:
             self.wallet = Wallet.generate()
             logger.info("ethereum_wallet_generated", address=self.wallet.address)
@@ -182,6 +193,21 @@ class AgentNode:
             except Exception as e:
                 logger.warning("algorand_settlement_unavailable", error=str(e))
                 self.settlement = None
+        elif self.config.chain_type == "filecoin" and self.config.filecoin.payment_channel_address:
+            try:
+                from web3 import Web3
+                from agentic_payments.chain.filecoin.settlement import FilecoinSettlement
+
+                w3 = Web3(Web3.HTTPProvider(self.config.filecoin.rpc_url))
+                self.settlement = FilecoinSettlement(
+                    w3=w3,
+                    contract_address=self.config.filecoin.payment_channel_address,
+                    wallet=self.wallet,
+                )
+                logger.info("filecoin_settlement_ready", rpc=self.config.filecoin.rpc_url)
+            except Exception as e:
+                logger.warning("filecoin_settlement_unavailable", error=str(e))
+                self.settlement = None
         elif self.config.chain_type == "ethereum" and self.config.ethereum.payment_channel_address:
             try:
                 from web3 import Web3
@@ -197,6 +223,23 @@ class AgentNode:
             except Exception as e:
                 logger.warning("ethereum_settlement_unavailable", error=str(e))
                 self.settlement = None
+
+        # --- IPFS Storage (optional) ---
+        self.ipfs_client = None
+        self.ipfs_receipt_store = None
+        if self.config.storage.enabled:
+            try:
+                from agentic_payments.storage.ipfs import IPFSClient
+                from agentic_payments.storage.receipt_store import IPFSReceiptStore
+
+                self.ipfs_client = IPFSClient(self.config.storage.ipfs_api_url)
+                self.ipfs_receipt_store = IPFSReceiptStore(
+                    self.ipfs_client, self.receipt_store
+                )
+                logger.info("ipfs_storage_ready", api=self.config.storage.ipfs_api_url)
+            except Exception as e:
+                logger.warning("ipfs_storage_unavailable", error=str(e))
+                self.ipfs_client = None
         self.protocol_handler = PaymentProtocolHandler(
             channel_manager=self.channel_manager,
             htlc_manager=self.htlc_manager,

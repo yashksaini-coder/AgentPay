@@ -240,6 +240,25 @@ export interface ChainInfo {
   chain_type: string;
   ethereum?: { rpc_url: string };
   algorand?: { algod_url: string; app_id: number; network: string };
+  filecoin?: { rpc_url: string; chain_id: number; network: string };
+  storage?: { enabled: boolean; ipfs_api_url: string };
+}
+
+export interface ERC8004Identity {
+  agent_id: number | null;
+  eth_address: string;
+  peer_id: string;
+  agent_uri: string;
+  registered_on_chain: boolean;
+  chain_id: number;
+  registration_tx: string | null;
+  enabled: boolean;
+}
+
+export interface StorageStatus {
+  enabled: boolean;
+  healthy?: boolean;
+  api_url?: string;
 }
 
 // ---------- API calls (parameterized by base URL) ----------
@@ -368,6 +387,19 @@ export function createApi(base: string = DEFAULT_API) {
 
     // Chain info
     getChainInfo: () => fetchApi<ChainInfo>(base, "/chain"),
+
+    // ERC-8004 Identity
+    getERC8004Status: () => fetchApi<ERC8004Identity>(base, "/identity/erc8004"),
+    registerERC8004: () => fetchApi<ERC8004Identity>(base, "/identity/erc8004/register", { method: "POST" }),
+    lookupERC8004: (agentId: number) => fetchApi<ERC8004Identity>(base, `/identity/erc8004/lookup/${agentId}`),
+    syncReputationOnchain: (peerId: string) =>
+      fetchApi<{ tx_hash: string | null; synced: boolean }>(base, "/reputation/sync-onchain", {
+        method: "POST",
+        body: JSON.stringify({ peer_id: peerId }),
+      }),
+
+    // IPFS Storage
+    getStorageStatus: () => fetchApi<StorageStatus>(base, "/storage/status"),
   };
 }
 

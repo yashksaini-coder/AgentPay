@@ -1,0 +1,94 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "agentic-payments",
+  "elements": [
+    {
+      "id": "title",
+      "type": "text",
+      "x": 300,
+      "y": 20,
+      "width": 500,
+      "height": 40,
+      "text": "ERC-8004 Agent Identity Flow",
+      "fontSize": 28,
+      "fontFamily": 2,
+      "textAlign": "center",
+      "strokeColor": "#0F172A",
+      "roughness": 0
+    },
+    {
+      "id": "subtitle",
+      "type": "text",
+      "x": 220,
+      "y": 58,
+      "width": 660,
+      "height": 22,
+      "text": "On-chain agent registration, identity bridge, and reputation sync",
+      "fontSize": 14,
+      "fontFamily": 2,
+      "textAlign": "center",
+      "strokeColor": "#64748B",
+      "roughness": 0
+    },
+
+    {"id": "phase1-label", "type": "text", "x": 60, "y": 100, "width": 200, "height": 22, "text": "Agent Startup", "fontSize": 16, "fontFamily": 2, "textAlign": "left", "strokeColor": "#1E293B", "roughness": 0},
+
+    {"id": "ed25519-box", "type": "rectangle", "x": 60, "y": 135, "width": 180, "height": 55, "strokeColor": "#2563EB", "backgroundColor": "#DBEAFE", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "ed25519-label", "type": "text", "x": 80, "y": 142, "width": 140, "height": 40, "text": "Ed25519 KeyPair\n→ PeerID", "fontSize": 12, "fontFamily": 2, "textAlign": "center", "strokeColor": "#1E40AF", "roughness": 0},
+
+    {"id": "secp-box", "type": "rectangle", "x": 280, "y": 135, "width": 180, "height": 55, "strokeColor": "#2563EB", "backgroundColor": "#DBEAFE", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "secp-label", "type": "text", "x": 300, "y": 142, "width": 140, "height": 40, "text": "secp256k1 Wallet\n→ ETH Address", "fontSize": 12, "fontFamily": 2, "textAlign": "center", "strokeColor": "#1E40AF", "roughness": 0},
+
+    {"id": "arrow-to-bridge", "type": "arrow", "x": 240, "y": 190, "width": 230, "height": 50, "strokeColor": "#059669", "strokeWidth": 2, "roughness": 0, "points": [[0, 0], [230, 50]], "endArrowhead": "arrow"},
+    {"id": "arrow-to-bridge2", "type": "arrow", "x": 370, "y": 190, "width": 100, "height": 50, "strokeColor": "#059669", "strokeWidth": 2, "roughness": 0, "points": [[0, 0], [100, 50]], "endArrowhead": "arrow"},
+
+    {"id": "bridge-box", "type": "rectangle", "x": 380, "y": 240, "width": 300, "height": 80, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "bridge-label", "type": "text", "x": 430, "y": 248, "width": 200, "height": 18, "text": "IdentityBridge", "fontSize": 16, "fontFamily": 2, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+    {"id": "bridge-detail", "type": "text", "x": 400, "y": 272, "width": 260, "height": 40, "text": "PeerID + ETH Address → agentURI\nensure_registered() → mint ERC-721", "fontSize": 11, "fontFamily": 2, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+
+    {"id": "phase2-label", "type": "text", "x": 60, "y": 350, "width": 200, "height": 22, "text": "On-Chain Registration", "fontSize": 16, "fontFamily": 2, "textAlign": "left", "strokeColor": "#1E293B", "roughness": 0},
+
+    {"id": "registry-box", "type": "rectangle", "x": 60, "y": 385, "width": 280, "height": 90, "strokeColor": "#8B5CF6", "backgroundColor": "#EDE9FE", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "registry-label", "type": "text", "x": 100, "y": 392, "width": 200, "height": 18, "text": "Identity Registry (ERC-721)", "fontSize": 14, "fontFamily": 2, "textAlign": "center", "strokeColor": "#5B21B6", "roughness": 0},
+    {"id": "registry-detail", "type": "text", "x": 75, "y": 416, "width": 250, "height": 50, "text": "registerAgent(uri) → agentId\nagentURI(id) → off-chain JSON\nagentIdOf(address) → tokenId", "fontSize": 11, "fontFamily": 1, "textAlign": "left", "strokeColor": "#5B21B6", "roughness": 0},
+
+    {"id": "uri-box", "type": "rectangle", "x": 400, "y": 385, "width": 280, "height": 90, "strokeColor": "#0891B2", "backgroundColor": "#CFFAFE", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "uri-label", "type": "text", "x": 440, "y": 392, "width": 200, "height": 18, "text": "Agent Registration File", "fontSize": 14, "fontFamily": 2, "textAlign": "center", "strokeColor": "#0E7490", "roughness": 0},
+    {"id": "uri-detail", "type": "text", "x": 415, "y": 416, "width": 250, "height": 50, "text": "name, peer_id, eth_address\ncapabilities, endpoints\npublic_key_ed25519, payment_types", "fontSize": 11, "fontFamily": 1, "textAlign": "left", "strokeColor": "#0E7490", "roughness": 0},
+
+    {"id": "arrow-bridge-registry", "type": "arrow", "x": 450, "y": 320, "width": 200, "height": 65, "strokeColor": "#8B5CF6", "strokeWidth": 2, "roughness": 0, "points": [[0, 0], [-200, 65]], "endArrowhead": "arrow"},
+    {"id": "arrow-bridge-registry-lbl", "type": "text", "x": 280, "y": 340, "width": 180, "height": 14, "text": "registerAgent(agentURI)", "fontSize": 10, "fontFamily": 1, "textAlign": "center", "strokeColor": "#5B21B6", "roughness": 0},
+
+    {"id": "arrow-registry-uri", "type": "arrow", "x": 340, "y": 430, "width": 60, "height": 0, "strokeColor": "#0891B2", "strokeWidth": 2, "strokeStyle": "dashed", "roughness": 0, "points": [[0, 0], [60, 0]], "endArrowhead": "arrow"},
+    {"id": "arrow-registry-uri-lbl", "type": "text", "x": 348, "y": 440, "width": 50, "height": 14, "text": "resolves", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#0891B2", "roughness": 0},
+
+    {"id": "phase3-label", "type": "text", "x": 60, "y": 510, "width": 200, "height": 22, "text": "Reputation Sync", "fontSize": 16, "fontFamily": 2, "textAlign": "left", "strokeColor": "#1E293B", "roughness": 0},
+
+    {"id": "local-rep-box", "type": "rectangle", "x": 60, "y": 545, "width": 200, "height": 60, "strokeColor": "#F59E0B", "backgroundColor": "#FEF3C7", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "local-rep-label", "type": "text", "x": 80, "y": 555, "width": 160, "height": 40, "text": "Local ReputationTracker\ntrust_score: 0.0-1.0", "fontSize": 12, "fontFamily": 2, "textAlign": "center", "strokeColor": "#92400E", "roughness": 0},
+
+    {"id": "convert-box", "type": "rectangle", "x": 320, "y": 545, "width": 140, "height": 60, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "convert-label", "type": "text", "x": 340, "y": 555, "width": 100, "height": 40, "text": "Convert\n× 100 → uint8", "fontSize": 12, "fontFamily": 2, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+
+    {"id": "onchain-rep-box", "type": "rectangle", "x": 520, "y": 545, "width": 220, "height": 60, "strokeColor": "#EF4444", "backgroundColor": "#FEE2E2", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "onchain-rep-label", "type": "text", "x": 540, "y": 552, "width": 180, "height": 44, "text": "Reputation Registry\nsubmitFeedback(id, score, tag)", "fontSize": 11, "fontFamily": 2, "textAlign": "center", "strokeColor": "#991B1B", "roughness": 0},
+
+    {"id": "arrow-local-convert", "type": "arrow", "x": 260, "y": 575, "width": 60, "height": 0, "strokeColor": "#059669", "strokeWidth": 1, "roughness": 0, "points": [[0, 0], [60, 0]], "endArrowhead": "arrow"},
+    {"id": "arrow-convert-onchain", "type": "arrow", "x": 460, "y": 575, "width": 60, "height": 0, "strokeColor": "#EF4444", "strokeWidth": 1, "roughness": 0, "points": [[0, 0], [60, 0]], "endArrowhead": "arrow"},
+
+    {"id": "legend-box", "type": "rectangle", "x": 60, "y": 640, "width": 680, "height": 60, "strokeColor": "#CBD5E1", "backgroundColor": "#FFFFFF", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "legend-title", "type": "text", "x": 80, "y": 646, "width": 80, "height": 18, "text": "LEGEND", "fontSize": 11, "fontFamily": 2, "strokeColor": "#64748B", "roughness": 0},
+    {"id": "l1-sq", "type": "rectangle", "x": 80, "y": 670, "width": 16, "height": 16, "strokeColor": "#2563EB", "backgroundColor": "#DBEAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l1-txt", "type": "text", "x": 102, "y": 670, "width": 80, "height": 16, "text": "libp2p / Keys", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l2-sq", "type": "rectangle", "x": 200, "y": 670, "width": 16, "height": 16, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l2-txt", "type": "text", "x": 222, "y": 670, "width": 80, "height": 16, "text": "Identity Bridge", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l3-sq", "type": "rectangle", "x": 330, "y": 670, "width": 16, "height": 16, "strokeColor": "#8B5CF6", "backgroundColor": "#EDE9FE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l3-txt", "type": "text", "x": 352, "y": 670, "width": 80, "height": 16, "text": "ERC-8004", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l4-sq", "type": "rectangle", "x": 450, "y": 670, "width": 16, "height": 16, "strokeColor": "#F59E0B", "backgroundColor": "#FEF3C7", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l4-txt", "type": "text", "x": 472, "y": 670, "width": 80, "height": 16, "text": "Reputation", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l5-sq", "type": "rectangle", "x": 570, "y": 670, "width": 16, "height": 16, "strokeColor": "#0891B2", "backgroundColor": "#CFFAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l5-txt", "type": "text", "x": 592, "y": 670, "width": 100, "height": 16, "text": "Off-chain Data", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0}
+  ],
+  "appState": {"viewBackgroundColor": "#F8F9FA", "gridSize": 20}
+}

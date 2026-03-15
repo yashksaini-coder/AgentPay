@@ -1,0 +1,115 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "agentic-payments",
+  "elements": [
+    {"id": "title", "type": "text", "x": 320, "y": 20, "width": 500, "height": 40, "text": "End-to-End Code Flow", "fontSize": 28, "fontFamily": 2, "textAlign": "center", "strokeColor": "#0F172A", "roughness": 0},
+    {"id": "subtitle", "type": "text", "x": 240, "y": 58, "width": 660, "height": 22, "text": "CLI start → node init → libp2p host → payment → receipt → settlement", "fontSize": 14, "fontFamily": 2, "textAlign": "center", "strokeColor": "#64748B", "roughness": 0},
+
+    {"id": "cli-box", "type": "rectangle", "x": 60, "y": 110, "width": 140, "height": 50, "strokeColor": "#334155", "backgroundColor": "#F1F5F9", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "cli-label", "type": "text", "x": 80, "y": 120, "width": 100, "height": 30, "text": "agentpay start\n(cli.py)", "fontSize": 12, "fontFamily": 1, "textAlign": "center", "strokeColor": "#334155", "roughness": 0},
+
+    {"id": "settings-box", "type": "rectangle", "x": 240, "y": 110, "width": 140, "height": 50, "strokeColor": "#334155", "backgroundColor": "#F1F5F9", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "settings-label", "type": "text", "x": 260, "y": 120, "width": 100, "height": 30, "text": "Settings()\nconfig.py", "fontSize": 12, "fontFamily": 1, "textAlign": "center", "strokeColor": "#334155", "roughness": 0},
+
+    {"id": "node-box", "type": "rectangle", "x": 420, "y": 110, "width": 160, "height": 50, "strokeColor": "#2563EB", "backgroundColor": "#DBEAFE", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "node-label", "type": "text", "x": 440, "y": 120, "width": 120, "height": 30, "text": "AgentNode()\nagent_node.py", "fontSize": 12, "fontFamily": 1, "textAlign": "center", "strokeColor": "#1E40AF", "roughness": 0},
+
+    {"id": "arrow-cli-settings", "type": "arrow", "x": 200, "y": 135, "width": 40, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[40,0]], "endArrowhead": "arrow"},
+    {"id": "arrow-settings-node", "type": "arrow", "x": 380, "y": 135, "width": 40, "height": 0, "strokeColor": "#2563EB", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[40,0]], "endArrowhead": "arrow"},
+
+    {"id": "start-label", "type": "text", "x": 60, "y": 190, "width": 300, "height": 22, "text": "AgentNode.start() Sequence", "fontSize": 16, "fontFamily": 2, "textAlign": "left", "strokeColor": "#1E293B", "roughness": 0},
+
+    {"id": "s1", "type": "rectangle", "x": 60, "y": 225, "width": 130, "height": 45, "strokeColor": "#2563EB", "backgroundColor": "#DBEAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s1-lbl", "type": "text", "x": 70, "y": 232, "width": 110, "height": 30, "text": "1. Identity\nEd25519 → PeerID", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#1E40AF", "roughness": 0},
+
+    {"id": "s2", "type": "rectangle", "x": 210, "y": 225, "width": 130, "height": 45, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s2-lbl", "type": "text", "x": 220, "y": 232, "width": 110, "height": 30, "text": "2. Wallet\nETH/Algo/FIL", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+
+    {"id": "s3", "type": "rectangle", "x": 360, "y": 225, "width": 130, "height": 45, "strokeColor": "#D97706", "backgroundColor": "#FEF3C7", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s3-lbl", "type": "text", "x": 370, "y": 232, "width": 110, "height": 30, "text": "3. Settlement\nContract binding", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#92400E", "roughness": 0},
+
+    {"id": "s4", "type": "rectangle", "x": 510, "y": 225, "width": 130, "height": 45, "strokeColor": "#8B5CF6", "backgroundColor": "#EDE9FE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s4-lbl", "type": "text", "x": 520, "y": 232, "width": 110, "height": 30, "text": "4. ERC-8004\nIdentity bridge", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#5B21B6", "roughness": 0},
+
+    {"id": "s5", "type": "rectangle", "x": 660, "y": 225, "width": 130, "height": 45, "strokeColor": "#0891B2", "backgroundColor": "#CFFAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s5-lbl", "type": "text", "x": 670, "y": 232, "width": 110, "height": 30, "text": "5. libp2p Host\nNoise + Yamux", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#0E7490", "roughness": 0},
+
+    {"id": "arrow-s12", "type": "arrow", "x": 190, "y": 247, "width": 20, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[20,0]], "endArrowhead": "arrow"},
+    {"id": "arrow-s23", "type": "arrow", "x": 340, "y": 247, "width": 20, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[20,0]], "endArrowhead": "arrow"},
+    {"id": "arrow-s34", "type": "arrow", "x": 490, "y": 247, "width": 20, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[20,0]], "endArrowhead": "arrow"},
+    {"id": "arrow-s45", "type": "arrow", "x": 640, "y": 247, "width": 20, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[20,0]], "endArrowhead": "arrow"},
+
+    {"id": "s6", "type": "rectangle", "x": 60, "y": 290, "width": 130, "height": 45, "strokeColor": "#0891B2", "backgroundColor": "#CFFAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s6-lbl", "type": "text", "x": 70, "y": 297, "width": 110, "height": 30, "text": "6. GossipSub\n4 PubSub topics", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#0E7490", "roughness": 0},
+
+    {"id": "s7", "type": "rectangle", "x": 210, "y": 290, "width": 130, "height": 45, "strokeColor": "#0891B2", "backgroundColor": "#CFFAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s7-lbl", "type": "text", "x": 220, "y": 297, "width": 110, "height": 30, "text": "7. Discovery\nmDNS polling", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#0E7490", "roughness": 0},
+
+    {"id": "s8", "type": "rectangle", "x": 360, "y": 290, "width": 130, "height": 45, "strokeColor": "#334155", "backgroundColor": "#F1F5F9", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s8-lbl", "type": "text", "x": 370, "y": 297, "width": 110, "height": 30, "text": "8. REST API\nHypercorn ASGI", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#334155", "roughness": 0},
+
+    {"id": "s9", "type": "rectangle", "x": 510, "y": 290, "width": 130, "height": 45, "strokeColor": "#334155", "backgroundColor": "#F1F5F9", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "s9-lbl", "type": "text", "x": 520, "y": 297, "width": 110, "height": 30, "text": "9. sleep_forever\nBlocks until ⌃C", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#334155", "roughness": 0},
+
+    {"id": "req-label", "type": "text", "x": 60, "y": 370, "width": 300, "height": 22, "text": "Request Flow (API → Payment)", "fontSize": 16, "fontFamily": 2, "textAlign": "left", "strokeColor": "#1E293B", "roughness": 0},
+
+    {"id": "curl-box", "type": "rectangle", "x": 60, "y": 405, "width": 100, "height": 40, "strokeColor": "#334155", "backgroundColor": "#F1F5F9", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "curl-lbl", "type": "text", "x": 75, "y": 415, "width": 70, "height": 16, "text": "curl / UI", "fontSize": 11, "fontFamily": 2, "textAlign": "center", "strokeColor": "#334155", "roughness": 0},
+
+    {"id": "api-box", "type": "rectangle", "x": 200, "y": 405, "width": 120, "height": 40, "strokeColor": "#334155", "backgroundColor": "#F1F5F9", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "api-lbl", "type": "text", "x": 220, "y": 415, "width": 80, "height": 16, "text": "routes.py", "fontSize": 11, "fontFamily": 1, "textAlign": "center", "strokeColor": "#334155", "roughness": 0},
+
+    {"id": "mgr-box", "type": "rectangle", "x": 360, "y": 405, "width": 140, "height": 40, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "mgr-lbl", "type": "text", "x": 375, "y": 415, "width": 110, "height": 16, "text": "ChannelManager", "fontSize": 11, "fontFamily": 1, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+
+    {"id": "proto-box", "type": "rectangle", "x": 540, "y": 405, "width": 140, "height": 40, "strokeColor": "#0891B2", "backgroundColor": "#CFFAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "proto-lbl", "type": "text", "x": 555, "y": 415, "width": 110, "height": 16, "text": "ProtocolHandler", "fontSize": 11, "fontFamily": 1, "textAlign": "center", "strokeColor": "#0E7490", "roughness": 0},
+
+    {"id": "stream-box", "type": "rectangle", "x": 720, "y": 405, "width": 120, "height": 40, "strokeColor": "#0891B2", "backgroundColor": "#ECFEFF", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "stream-lbl", "type": "text", "x": 735, "y": 415, "width": 90, "height": 16, "text": "libp2p stream", "fontSize": 11, "fontFamily": 2, "textAlign": "center", "strokeColor": "#0E7490", "roughness": 0},
+
+    {"id": "a-c-a", "type": "arrow", "x": 160, "y": 425, "width": 40, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[40,0]], "endArrowhead": "arrow"},
+    {"id": "a-a-m", "type": "arrow", "x": 320, "y": 425, "width": 40, "height": 0, "strokeColor": "#059669", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[40,0]], "endArrowhead": "arrow"},
+    {"id": "a-m-p", "type": "arrow", "x": 500, "y": 425, "width": 40, "height": 0, "strokeColor": "#0891B2", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[40,0]], "endArrowhead": "arrow"},
+    {"id": "a-p-s", "type": "arrow", "x": 680, "y": 425, "width": 40, "height": 0, "strokeColor": "#0891B2", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[40,0]], "endArrowhead": "arrow"},
+
+    {"id": "pay-label", "type": "text", "x": 60, "y": 480, "width": 300, "height": 22, "text": "Payment Lifecycle", "fontSize": 16, "fontFamily": 2, "textAlign": "left", "strokeColor": "#1E293B", "roughness": 0},
+
+    {"id": "p1-box", "type": "rectangle", "x": 60, "y": 515, "width": 110, "height": 35, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "p1-lbl", "type": "text", "x": 75, "y": 523, "width": 80, "height": 16, "text": "Open Channel", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+
+    {"id": "p2-box", "type": "rectangle", "x": 200, "y": 515, "width": 110, "height": 35, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "p2-lbl", "type": "text", "x": 210, "y": 523, "width": 90, "height": 16, "text": "Send Vouchers", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+
+    {"id": "p3-box", "type": "rectangle", "x": 340, "y": 515, "width": 110, "height": 35, "strokeColor": "#6366F1", "backgroundColor": "#E0E7FF", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "p3-lbl", "type": "text", "x": 350, "y": 523, "width": 90, "height": 16, "text": "Create Receipt", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#3730A3", "roughness": 0},
+
+    {"id": "p4-box", "type": "rectangle", "x": 480, "y": 515, "width": 110, "height": 35, "strokeColor": "#059669", "backgroundColor": "#ECFDF5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "p4-lbl", "type": "text", "x": 490, "y": 523, "width": 90, "height": 16, "text": "Close Channel", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#065F46", "roughness": 0},
+
+    {"id": "p5-box", "type": "rectangle", "x": 620, "y": 515, "width": 130, "height": 35, "strokeColor": "#D97706", "backgroundColor": "#FEF3C7", "fillStyle": "solid", "strokeWidth": 2, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "p5-lbl", "type": "text", "x": 635, "y": 523, "width": 100, "height": 16, "text": "On-Chain Settle", "fontSize": 10, "fontFamily": 2, "textAlign": "center", "strokeColor": "#92400E", "roughness": 0},
+
+    {"id": "ap1", "type": "arrow", "x": 170, "y": 532, "width": 30, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[30,0]], "endArrowhead": "arrow"},
+    {"id": "ap2", "type": "arrow", "x": 310, "y": 532, "width": 30, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[30,0]], "endArrowhead": "arrow"},
+    {"id": "ap3", "type": "arrow", "x": 450, "y": 532, "width": 30, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[30,0]], "endArrowhead": "arrow"},
+    {"id": "ap4", "type": "arrow", "x": 590, "y": 532, "width": 30, "height": 0, "strokeColor": "#334155", "strokeWidth": 1, "roughness": 0, "points": [[0,0],[30,0]], "endArrowhead": "arrow"},
+
+    {"id": "legend-box", "type": "rectangle", "x": 60, "y": 580, "width": 690, "height": 60, "strokeColor": "#CBD5E1", "backgroundColor": "#FFFFFF", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0, "roundness": {"type": 3}},
+    {"id": "legend-title", "type": "text", "x": 80, "y": 586, "width": 80, "height": 18, "text": "LEGEND", "fontSize": 11, "fontFamily": 2, "strokeColor": "#64748B", "roughness": 0},
+    {"id": "l1-sq", "type": "rectangle", "x": 80, "y": 610, "width": 16, "height": 16, "strokeColor": "#334155", "backgroundColor": "#F1F5F9", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l1-txt", "type": "text", "x": 102, "y": 610, "width": 60, "height": 16, "text": "CLI / API", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l2-sq", "type": "rectangle", "x": 180, "y": 610, "width": 16, "height": 16, "strokeColor": "#2563EB", "backgroundColor": "#DBEAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l2-txt", "type": "text", "x": 202, "y": 610, "width": 60, "height": 16, "text": "Core Node", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l3-sq", "type": "rectangle", "x": 280, "y": 610, "width": 16, "height": 16, "strokeColor": "#059669", "backgroundColor": "#D1FAE5", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l3-txt", "type": "text", "x": 302, "y": 610, "width": 60, "height": 16, "text": "Payments", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l4-sq", "type": "rectangle", "x": 380, "y": 610, "width": 16, "height": 16, "strokeColor": "#0891B2", "backgroundColor": "#CFFAFE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l4-txt", "type": "text", "x": 402, "y": 610, "width": 60, "height": 16, "text": "Network", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l5-sq", "type": "rectangle", "x": 480, "y": 610, "width": 16, "height": 16, "strokeColor": "#D97706", "backgroundColor": "#FEF3C7", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l5-txt", "type": "text", "x": 502, "y": 610, "width": 60, "height": 16, "text": "On-Chain", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0},
+    {"id": "l6-sq", "type": "rectangle", "x": 580, "y": 610, "width": 16, "height": 16, "strokeColor": "#8B5CF6", "backgroundColor": "#EDE9FE", "fillStyle": "solid", "strokeWidth": 1, "roughness": 0},
+    {"id": "l6-txt", "type": "text", "x": 602, "y": 610, "width": 60, "height": 16, "text": "ERC-8004", "fontSize": 10, "fontFamily": 2, "strokeColor": "#334155", "roughness": 0}
+  ],
+  "appState": {"viewBackgroundColor": "#F8F9FA", "gridSize": 20}
+}

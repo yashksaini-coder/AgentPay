@@ -7,6 +7,7 @@ import { useAgentManager } from "@/lib/useAgentManager";
 import { formatWei, type Channel } from "@/lib/api";
 import NetworkGraph, { type LoadingNode, type GraphInteraction, type AnimatingRoute } from "@/components/NetworkGraph";
 import DiscoveryPanel from "@/components/DiscoveryPanel";
+import IdentityPanel from "@/components/IdentityPanel";
 import NegotiationTimeline from "@/components/NegotiationTimeline";
 import ReceiptChain from "@/components/ReceiptChain";
 import PolicyEditor from "@/components/PolicyEditor";
@@ -732,11 +733,11 @@ function relativeTime(ts: number): string {
 // ═══════════════════════════════════════════════════════════
 
 function TrustPanel({ api, trustScores }: { api: ReturnType<typeof import("@/lib/api").createApi>; trustScores: Record<string, number> }) {
-  type TrustSection = "discovery" | "negotiations" | "receipts" | "policies" | "sla" | "disputes" | "pricing";
-  const [section, setSection] = useState<TrustSection>("discovery");
-  const sections: TrustSection[] = ["discovery", "negotiations", "sla", "disputes", "pricing", "receipts", "policies"];
+  type TrustSection = "identity" | "discovery" | "negotiations" | "receipts" | "policies" | "sla" | "disputes" | "pricing";
+  const [section, setSection] = useState<TrustSection>("identity");
+  const sections: TrustSection[] = ["identity", "discovery", "negotiations", "sla", "disputes", "pricing", "receipts", "policies"];
   const labels: Record<TrustSection, string> = {
-    discovery: "Discover", negotiations: "Negotiate", sla: "SLA",
+    identity: "Identity", discovery: "Discover", negotiations: "Negotiate", sla: "SLA",
     disputes: "Disputes", pricing: "Pricing", receipts: "Receipts", policies: "Policy",
   };
 
@@ -758,6 +759,7 @@ function TrustPanel({ api, trustScores }: { api: ReturnType<typeof import("@/lib
         ))}
       </div>
 
+      {section === "identity" && <IdentityPanel api={api} />}
       {section === "discovery" && <DiscoveryPanel api={api} trustScores={trustScores} />}
       {section === "negotiations" && <NegotiationTimeline api={api} />}
       {section === "sla" && <SLAPanel api={api} />}

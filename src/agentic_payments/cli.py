@@ -24,6 +24,7 @@ receipts_app = typer.Typer(help="Signed receipt chains.")
 gateway_app = typer.Typer(help="x402 resource gateway.")
 pricing_app = typer.Typer(help="Dynamic pricing engine.")
 dispute_app = typer.Typer(help="Dispute resolution.")
+storage_app = typer.Typer(help="IPFS content-addressed storage.")
 
 app.add_typer(identity_app, name="identity")
 app.add_typer(peer_app, name="peer")
@@ -36,6 +37,7 @@ app.add_typer(receipts_app, name="receipts")
 app.add_typer(gateway_app, name="gateway")
 app.add_typer(pricing_app, name="pricing")
 app.add_typer(dispute_app, name="dispute")
+app.add_typer(storage_app, name="storage")
 
 
 def _setup_logging(level: str = "INFO", fmt: str = "console") -> None:
@@ -207,10 +209,13 @@ def start(
     ws_port: int = typer.Option(9001, help="WebSocket listen port"),
     api_port: int = typer.Option(8080, help="REST API port"),
     eth_rpc: str = typer.Option("http://localhost:8545", help="Ethereum RPC URL"),
-    chain: str = typer.Option("ethereum", help="Settlement chain: ethereum or algorand"),
+    chain: str = typer.Option("ethereum", help="Settlement chain: ethereum, algorand, or filecoin"),
     algo_url: str = typer.Option("http://localhost:4001", help="Algorand node URL"),
     algo_token: str = typer.Option("", help="Algorand API token"),
     algo_app_id: int = typer.Option(0, help="Algorand payment channel app ID"),
+    fil_rpc: str = typer.Option("", help="Filecoin FEVM RPC URL (e.g. Glif calibration)"),
+    fil_contract: str = typer.Option("", help="PaymentChannel contract address on FEVM"),
+    ipfs_url: str = typer.Option("", help="IPFS HTTP API URL for content-addressed storage"),
     log_level: str = typer.Option("INFO", help="Log level"),
     identity_path: Path = typer.Option(
         Path("~/.agentic-payments/identity.key"), help="Identity key file"
@@ -236,6 +241,13 @@ def start(
         settings.algorand.algod_token = algo_token
     if algo_app_id:
         settings.algorand.app_id = algo_app_id
+    if fil_rpc:
+        settings.filecoin.rpc_url = fil_rpc
+    if fil_contract:
+        settings.filecoin.payment_channel_address = fil_contract
+    if ipfs_url:
+        settings.storage.ipfs_api_url = ipfs_url
+        settings.storage.enabled = True
 
     async def run() -> None:
         async with trio.open_nursery() as nursery:
@@ -1184,6 +1196,62 @@ def chain_info(
     import json
 
     data = _api_or_exit(api_url, "/chain")
+    typer.echo(json.dumps(data, indent=2))
+
+
+# ── Storage commands ───────────────────────────────────────────
+
+
+@storage_app.command("status")
+def storage_status(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Check IPFS daemon connectivity and storage status."""
+    import json
+
+    data = _api_or_exit(api_url, "/storage/status")
+    typer.echo(json.dumps(data, indent=2))
+
+
+@storage_app.command("pin")
+def storage_pin(
+    channel: str = typer.Option("", "--channel", help="Pin receipt chain for a channel ID (hex)"),
+    data: str = typer.Option("", "--data", help="Arbitrary data string to pin"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Pin data or receipt chain to IPFS."""
+    import json as jsonlib
+
+    if channel:
+        result = _api_or_exit(api_url, f"/storage/receipts/{channel}/pin", method="POST")
+    elif data:
+        result = _api_or_exit(api_url, "/storage/pin", method="POST", json={"data": data})
+    else:
+        typer.echo("Provide --channel or --data", err=True)
+        raise typer.Exit(1)
+    typer.echo(jsonlib.dumps(result, indent=2))
+
+
+@storage_app.command("get")
+def storage_get(
+    cid: str = typer.Argument(help="Content ID to retrieve"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Retrieve content from IPFS by CID."""
+    import json
+
+    data = _api_or_exit(api_url, f"/storage/get/{cid}")
+    typer.echo(json.dumps(data, indent=2))
+
+
+@storage_app.command("list")
+def storage_list(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """List all pinned IPFS objects."""
+    import json
+
+    data = _api_or_exit(api_url, "/storage/pins")
     typer.echo(json.dumps(data, indent=2))
 
 

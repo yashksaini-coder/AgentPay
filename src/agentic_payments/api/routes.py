@@ -1071,6 +1071,89 @@ def register_routes(app: QuartTrio) -> None:
                 "network": node.config.algorand.network,
                 "app_id": node.config.algorand.app_id,
             },
+            "filecoin": {
+                "rpc_url": node.config.filecoin.rpc_url,
+                "chain_id": node.config.filecoin.chain_id,
+                "network": node.config.filecoin.network,
+                "contract_address": node.config.filecoin.payment_channel_address,
+            },
+            "storage": {
+                "enabled": node.config.storage.enabled,
+                "ipfs_api_url": node.config.storage.ipfs_api_url,
+            },
         }
         _log_api("/chain", 200, (time.monotonic() - t0) * 1000)
         return result
+
+    # ── IPFS Storage endpoints ────────────────────────────────
+
+    @app.route("/storage/status")
+    async def storage_status() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.ipfs_client:
+            _log_api("/storage/status", 503, (time.monotonic() - t0) * 1000)
+            return {"enabled": False, "error": "IPFS storage not configured"}, 503
+        healthy = await node.ipfs_client.health()
+        status = 200 if healthy else 503
+        _log_api("/storage/status", status, (time.monotonic() - t0) * 1000)
+        return {
+            "enabled": True,
+            "healthy": healthy,
+            "api_url": node.config.storage.ipfs_api_url,
+            "auto_pin_receipts": node.config.storage.auto_pin_receipts,
+        }, status
+
+    @app.route("/storage/pin", methods=["POST"])
+    async def storage_pin() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.ipfs_client:
+            return {"error": "IPFS storage not configured"}, 503
+        data = await request.get_json()
+        if not data or "data" not in data:
+            return {"error": "JSON body with 'data' field required"}, 400
+        content = data["data"].encode() if isinstance(data["data"], str) else data["data"]
+        result = await node.ipfs_client.add(content, name=data.get("name", ""))
+        ms = (time.monotonic() - t0) * 1000
+        _log_api("/storage/pin", 201, ms, method="POST")
+        return {"cid": result.cid, "size": result.size}, 201
+
+    @app.route("/storage/get/<cid>")
+    async def storage_get(cid: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.ipfs_client:
+            return {"error": "IPFS storage not configured"}, 503
+        try:
+            content = await node.ipfs_client.cat_json(cid)
+            _log_api(f"/storage/get/{cid[:8]}", 200, (time.monotonic() - t0) * 1000)
+            return content, 200
+        except Exception as e:
+            _log_api(f"/storage/get/{cid[:8]}", 404, (time.monotonic() - t0) * 1000, error=str(e))
+            return {"error": str(e)}, 404
+
+    @app.route("/storage/receipts/<channel_id>/pin", methods=["POST"])
+    async def storage_pin_receipts(channel_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.ipfs_receipt_store:
+            return {"error": "IPFS storage not configured"}, 503
+        try:
+            cid_bytes = bytes.fromhex(channel_id)
+            cid = await node.ipfs_receipt_store.pin_chain(cid_bytes)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api(f"/storage/receipts/{channel_id[:8]}/pin", 201, ms, method="POST")
+            return {"cid": cid, "channel_id": channel_id}, 201
+        except ValueError as e:
+            return {"error": str(e)}, 404
+
+    @app.route("/storage/pins")
+    async def storage_pins() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.ipfs_receipt_store:
+            return {"enabled": False, "pins": []}
+        pinned = node.ipfs_receipt_store.list_pinned()
+        _log_api("/storage/pins", 200, (time.monotonic() - t0) * 1000)
+        return pinned

@@ -29,11 +29,13 @@ AgentPay is structured as a modular agent runtime with six layers:
 - **Networking** — [py-libp2p](https://github.com/libp2p/py-libp2p) 0.6.0 with TCP/WebSocket transports, Noise encryption, Yamux multiplexing, mDNS discovery, and GossipSub pubsub
 - **Wire Protocol** — 13 message types over length-prefixed msgpack streams (`/agentic-payments/1.0.0`), covering payments, HTLCs, negotiations, and announcements
 - **Payment Channels** — Filecoin-style cumulative vouchers with ECDSA signatures, HTLC multi-hop routing via reputation-weighted BFS, and a 6-state channel lifecycle
-- **Settlement** — Dual-chain: **Ethereum** (Solidity `PaymentChannel.sol` with challenge period) and **Algorand** (ARC-4 smart contract with box storage) — selectable at startup
+- **Settlement** — Tri-chain: **Ethereum** (Solidity `PaymentChannel.sol`), **Algorand** (ARC-4 + box storage), and **Filecoin FEVM** (same contract on FEVM with f4 address support) — selectable at startup
+- **Identity** — [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) on-chain agent registration (ERC-721 identity token), reputation sync, and discovery fallback
 - **Trust Layer** — Reputation scoring, SLA monitoring, dynamic pricing engine, dispute detection, wallet policies, and hash-chained signed receipt audit trails
-- **Interfaces** — Quart-Trio REST API (~40 endpoints), Typer CLI, and a Next.js 15 real-time dashboard
+- **Storage** — IPFS content-addressed pinning for receipts and capabilities, with CID-based retrieval and GossipSub broadcast
+- **Interfaces** — Quart-Trio REST API (~50 endpoints), Typer CLI (~50 commands), and a Next.js 15 real-time dashboard
 
-> See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system design with 10 Excalidraw diagrams covering every subsystem.
+> See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system design with 13 Excalidraw diagrams covering every subsystem.
 
 ## Quick Start
 

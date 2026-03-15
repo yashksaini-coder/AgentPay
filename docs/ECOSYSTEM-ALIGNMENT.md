@@ -17,12 +17,17 @@ The [Filecoin Agents](https://filecoin.cloud/agents) initiative defines 7 Reques
 | **RFS-7** | Agent-Generated Data Marketplace | `pricing/` — dynamic pricing with trust discounts + congestion premiums, `discovery/` — capability registry with Bazaar-compatible format | **Complete** |
 | **RFS-4** | Autonomous Agent Economy Testbed | `scripts/dev.sh` — multi-agent simulation, dashboard simulation tab — batch payments, topology control, success rate tracking | **Complete** |
 
-### Partial Alignment (Roadmap)
+### Recently Implemented
+
+| RFS | Title | AgentPay Component | Status |
+|-----|-------|-------------------|--------|
+| **RFS-2** | Onchain Agent Registry | `identity/` — ERC-8004 Identity Registry (ERC-721), IdentityBridge (PeerID + wallet → agentId), reputation sync to on-chain registry | **Complete** |
+| **RFS-1** | Agentic Storage SDK | `storage/` — IPFS content-addressed storage for receipts and capabilities, trio-compatible HTTP client | **Complete** |
+
+### Roadmap
 
 | RFS | Title | Gap | Path Forward |
 |-----|-------|-----|-------------|
-| **RFS-2** | Onchain Agent Registry | AgentPay uses GossipSub-based registry, not ERC-8004 | Add ERC-8004 agent identity + on-chain registry on FVM |
-| **RFS-1** | Agentic Storage SDK | No storage integration | Add IPFS/Filecoin storage for receipts, reputation snapshots |
 | **RFS-6** | Autonomous Infrastructure Brokerage | SLA negotiation exists but not storage procurement | Extend negotiation protocol for storage deals |
 
 ---

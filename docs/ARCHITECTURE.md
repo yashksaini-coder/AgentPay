@@ -708,12 +708,54 @@ Excalidraw diagrams are available in [`/diagrams/`](../diagrams/):
 | HTLC Multi-Hop Routing | [`htlc-routing.excalidraw`](../diagrams/htlc-routing.excalidraw) | Multi-hop payment via intermediaries: propose → fulfill → cancel with BFS pathfinding |
 | Settlement Flows | [`settlement-flow.excalidraw`](../diagrams/settlement-flow.excalidraw) | Ethereum vs Algorand settlement comparison: contracts, signatures, box storage |
 | Receipt Chain | [`receipt-chain.excalidraw`](../diagrams/receipt-chain.excalidraw) | Hash-chained signed receipts: structure, verification, GossipSub broadcast |
+| ERC-8004 Identity Flow | [`erc8004-identity-flow.excalidraw`](../diagrams/erc8004-identity-flow.excalidraw) | Agent registration, identity bridge, reputation sync to on-chain registry |
+| IPFS Storage Flow | [`ipfs-storage-flow.excalidraw`](../diagrams/ipfs-storage-flow.excalidraw) | Receipt pinning, CID broadcast, retrieval and verification |
+| End-to-End Code Flow | [`e2e-code-flow.excalidraw`](../diagrams/e2e-code-flow.excalidraw) | CLI → node init → libp2p → payment → receipt → settlement lifecycle |
 
 PNG exports are in [`docs/images/`](images/). To edit, open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com).
 
 ---
 
-## 23. Design Decisions and Tradeoffs
+## 23. ERC-8004 Agent Identity
+
+AgentPay supports the [ERC-8004 "Trustless Agents"](https://eips.ethereum.org/EIPS/eip-8004) standard for on-chain agent identity and reputation.
+
+### 23.1 Identity Bridge
+
+The `IdentityBridge` maps the node's libp2p PeerID + ETH wallet address to an ERC-8004 `agentId` (ERC-721 token):
+
+```
+Ed25519 KeyPair → PeerID (libp2p networking)
+secp256k1 Key   → ETH Address (payment signing)
+                        ↓
+              IdentityBridge.ensure_registered()
+                        ↓
+              ERC-8004 Identity Registry
+              → mint ERC-721 token → agentId
+              → store agentURI → off-chain registration file
+```
+
+The `agentURI` resolves to a JSON file containing the agent's name, capabilities, endpoints, and public keys — enabling discovery by other ERC-8004 agents.
+
+### 23.2 Reputation Sync
+
+Local trust scores (0.0-1.0 from `ReputationTracker`) are pushed to the ERC-8004 Reputation Registry as uint8 values (0-100):
+
+- `sync_reputation()` converts and submits feedback on-chain
+- Rate-limited to avoid excessive transactions
+- Tags feedback with "payment" category
+
+### 23.3 Discovery Fallback
+
+When GossipSub returns no results for a capability search, the `CapabilityRegistry` can fall back to querying the ERC-8004 Identity Registry for on-chain agents.
+
+### 23.4 Configuration
+
+Enable with `--erc8004-identity <addr> --erc8004-reputation <addr>` on the CLI, or set `ERC8004_ENABLED=true` with contract addresses in environment variables.
+
+---
+
+## 24. Design Decisions and Tradeoffs
 
 ### Why cumulative vouchers over incremental?
 

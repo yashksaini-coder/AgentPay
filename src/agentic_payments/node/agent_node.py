@@ -123,6 +123,8 @@ class AgentNode:
         self.receipt_store: ReceiptStore = ReceiptStore()
         self.gateway: X402Gateway = X402Gateway()
         self.sla_monitor: SLAMonitor = SLAMonitor()
+        self.erc8004_client = None
+        self.identity_bridge = None
         self.pricing_engine: PricingEngine | None = None  # initialized after wallet
         self.dispute_monitor: DisputeMonitor | None = None  # initialized after channel_manager
 
@@ -240,6 +242,32 @@ class AgentNode:
             except Exception as e:
                 logger.warning("ipfs_storage_unavailable", error=str(e))
                 self.ipfs_client = None
+
+        # --- ERC-8004 Agent Identity (optional) ---
+        if self.config.erc8004.enabled and self.config.erc8004.identity_registry_address:
+            try:
+                from web3 import Web3 as Web3Import
+                from agentic_payments.identity.erc8004 import ERC8004Client
+                from agentic_payments.identity.bridge import IdentityBridge
+
+                rpc = self.config.erc8004.rpc_url or self.config.ethereum.rpc_url
+                w3 = Web3Import(Web3Import.HTTPProvider(rpc))
+                self.erc8004_client = ERC8004Client(
+                    w3=w3,
+                    identity_addr=self.config.erc8004.identity_registry_address,
+                    reputation_addr=self.config.erc8004.reputation_registry_address,
+                )
+                self.identity_bridge = IdentityBridge(
+                    client=self.erc8004_client,
+                    peer_id=self.peer_id.to_base58() if self.peer_id else "",
+                    wallet_address=self.wallet.address,
+                )
+                logger.info("erc8004_identity_ready")
+            except Exception as e:
+                logger.warning("erc8004_identity_unavailable", error=str(e))
+                self.erc8004_client = None
+                self.identity_bridge = None
+
         self.protocol_handler = PaymentProtocolHandler(
             channel_manager=self.channel_manager,
             htlc_manager=self.htlc_manager,

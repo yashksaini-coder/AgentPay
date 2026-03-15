@@ -216,6 +216,8 @@ def start(
     fil_rpc: str = typer.Option("", help="Filecoin FEVM RPC URL (e.g. Glif calibration)"),
     fil_contract: str = typer.Option("", help="PaymentChannel contract address on FEVM"),
     ipfs_url: str = typer.Option("", help="IPFS HTTP API URL for content-addressed storage"),
+    erc8004_identity: str = typer.Option("", help="ERC-8004 Identity Registry contract address"),
+    erc8004_reputation: str = typer.Option("", help="ERC-8004 Reputation Registry contract address"),
     log_level: str = typer.Option("INFO", help="Log level"),
     identity_path: Path = typer.Option(
         Path("~/.agentic-payments/identity.key"), help="Identity key file"
@@ -248,6 +250,11 @@ def start(
     if ipfs_url:
         settings.storage.ipfs_api_url = ipfs_url
         settings.storage.enabled = True
+    if erc8004_identity:
+        settings.erc8004.identity_registry_address = erc8004_identity
+        settings.erc8004.enabled = True
+    if erc8004_reputation:
+        settings.erc8004.reputation_registry_address = erc8004_reputation
 
     async def run() -> None:
         async with trio.open_nursery() as nursery:
@@ -291,6 +298,40 @@ def identity_show(
     pid = peer_id_from_keypair(key_pair)
     typer.echo(f"PeerID: {pid.to_base58()}")
     typer.echo(f"Key file: {path.expanduser()}")
+
+
+@identity_app.command("register-onchain")
+def identity_register_onchain(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Register agent identity on-chain via ERC-8004."""
+    import json
+
+    result = _api_or_exit(api_url, "/identity/erc8004/register", method="POST")
+    typer.echo(json.dumps(result, indent=2))
+
+
+@identity_app.command("lookup")
+def identity_lookup(
+    agent_id: int = typer.Argument(help="ERC-8004 agent token ID"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Look up an agent by on-chain ERC-8004 ID."""
+    import json
+
+    result = _api_or_exit(api_url, f"/identity/erc8004/lookup/{agent_id}")
+    typer.echo(json.dumps(result, indent=2))
+
+
+@identity_app.command("erc8004-status")
+def identity_erc8004_status(
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Show ERC-8004 on-chain registration status."""
+    import json
+
+    result = _api_or_exit(api_url, "/identity/erc8004")
+    typer.echo(json.dumps(result, indent=2))
 
 
 @peer_app.command("list")
@@ -952,6 +993,20 @@ def reputation_show(
 
     data = _api_or_exit(api_url, f"/reputation/{peer_id}")
     typer.echo(json.dumps(data.get("reputation", data), indent=2))
+
+
+@reputation_app.command("sync-onchain")
+def reputation_sync_onchain(
+    peer_id: str = typer.Option(..., "--peer", help="Peer ID to sync reputation for"),
+    api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
+) -> None:
+    """Push local trust score to ERC-8004 Reputation Registry."""
+    import json
+
+    result = _api_or_exit(
+        api_url, "/reputation/sync-onchain", method="POST", json={"peer_id": peer_id}
+    )
+    typer.echo(json.dumps(result, indent=2))
 
 
 # ── Policy commands ─────────────────────────────────────────────

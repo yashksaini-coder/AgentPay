@@ -788,6 +788,83 @@ def register_routes(app: QuartTrio) -> None:
         )
         return result, 200
 
+    # ── ERC-8004 Identity endpoints ─────────────────────────────
+
+    @app.route("/identity/erc8004")
+    async def identity_erc8004() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.identity_bridge:
+            _log_api("/identity/erc8004", 200, (time.monotonic() - t0) * 1000)
+            return {"enabled": False, "registered_on_chain": False}, 200
+        identity = node.identity_bridge.identity
+        result = identity.to_dict() if identity else {
+            "enabled": True,
+            "registered_on_chain": False,
+            "eth_address": node.wallet.address if node.wallet else "",
+            "peer_id": node.peer_id.to_base58() if node.peer_id else "",
+        }
+        result["enabled"] = True
+        _log_api("/identity/erc8004", 200, (time.monotonic() - t0) * 1000)
+        return result, 200
+
+    @app.route("/identity/erc8004/register", methods=["POST"])
+    async def identity_erc8004_register() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.identity_bridge or not node.wallet:
+            return {"error": "ERC-8004 not configured"}, 503
+        try:
+            identity = await node.identity_bridge.ensure_registered(node.wallet)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/identity/erc8004/register", 200, ms, method="POST")
+            return identity.to_dict(), 200
+        except Exception as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/identity/erc8004/register", 500, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 500
+
+    @app.route("/identity/erc8004/lookup/<int:agent_id>")
+    async def identity_erc8004_lookup(agent_id: int) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.erc8004_client:
+            return {"error": "ERC-8004 not configured"}, 503
+        identity = await node.erc8004_client.lookup_agent(agent_id)
+        if not identity:
+            return {"error": "Agent not found"}, 404
+        _log_api(f"/identity/erc8004/lookup/{agent_id}", 200, (time.monotonic() - t0) * 1000)
+        return identity.to_dict(), 200
+
+    @app.route("/reputation/sync-onchain", methods=["POST"])
+    async def reputation_sync_onchain() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if not node.identity_bridge or not node.wallet:
+            return {"error": "ERC-8004 not configured"}, 503
+        data = await request.get_json()
+        peer_id = data.get("peer_id", "") if data else ""
+        if not peer_id:
+            return {"error": "peer_id required"}, 400
+        rep = node.reputation_tracker.get_reputation(peer_id)
+        if not rep:
+            return {"error": f"No reputation data for {peer_id}"}, 404
+        try:
+            tx_hash = await node.identity_bridge.sync_reputation(
+                rep.trust_score, node.wallet, tag="payment"
+            )
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/reputation/sync-onchain", 200, ms, method="POST")
+            return {
+                "peer_id": peer_id,
+                "trust_score": rep.trust_score,
+                "erc8004_score": round(rep.trust_score * 100),
+                "tx_hash": tx_hash,
+                "synced": tx_hash is not None,
+            }, 200
+        except Exception as e:
+            return {"error": str(e)}, 500
+
     # ── Gateway endpoints ───────────────────────────────────────
 
     @app.route("/gateway/resources")

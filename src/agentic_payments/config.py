@@ -189,6 +189,29 @@ class FilecoinConfig(BaseSettings):
     )
 
 
+class ERC8004Config(BaseSettings):
+    """ERC-8004 agent identity standard configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="ERC8004_")
+
+    enabled: bool = Field(default=False, description="Enable ERC-8004 on-chain agent identity")
+    identity_registry_address: str = Field(
+        default="", description="ERC-8004 Identity Registry contract address"
+    )
+    reputation_registry_address: str = Field(
+        default="", description="ERC-8004 Reputation Registry contract address"
+    )
+    rpc_url: str = Field(
+        default="", description="RPC URL for ERC-8004 chain (empty = use ethereum.rpc_url)"
+    )
+    auto_register: bool = Field(
+        default=False, description="Automatically register on-chain at startup"
+    )
+    auto_sync_reputation: bool = Field(
+        default=False, description="Automatically push trust scores to on-chain registry"
+    )
+
+
 class StorageConfig(BaseSettings):
     """IPFS content-addressed storage configuration."""
 
@@ -248,6 +271,7 @@ class Settings(BaseSettings):
     ethereum: EthereumConfig = Field(default_factory=EthereumConfig)
     algorand: AlgorandConfig = Field(default_factory=AlgorandConfig)
     filecoin: FilecoinConfig = Field(default_factory=FilecoinConfig)
+    erc8004: ERC8004Config = Field(default_factory=ERC8004Config)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     api: APIConfig = Field(default_factory=APIConfig)

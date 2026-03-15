@@ -37,6 +37,14 @@ All commands are run with `uv run agentpay` (or `agentpay` if installed globally
 | `agentpay dispute file` | File a manual dispute |
 | `agentpay gateway resources` | List x402 gated resources |
 | `agentpay gateway register` | Register a gated resource |
+| `agentpay identity register-onchain` | Register agent on-chain via ERC-8004 |
+| `agentpay identity lookup` | Look up agent by ERC-8004 token ID |
+| `agentpay identity erc8004-status` | Show ERC-8004 registration status |
+| `agentpay reputation sync-onchain` | Push trust score to on-chain registry |
+| `agentpay storage status` | Check IPFS daemon connectivity |
+| `agentpay storage pin` | Pin data or receipt chain to IPFS |
+| `agentpay storage get` | Retrieve content from IPFS by CID |
+| `agentpay storage list` | List pinned IPFS objects |
 | `agentpay sla` | Show SLA violations summary |
 | `agentpay chain` | Show chain type and settlement info |
 
@@ -56,6 +64,15 @@ Usage: agentpay start [OPTIONS]
 | `--ws-port` | INTEGER | `9001` | WebSocket listen port for browser/WS clients |
 | `--api-port` | INTEGER | `8080` | REST API port (frontend connects here) |
 | `--eth-rpc` | TEXT | `http://localhost:8545` | Ethereum JSON-RPC endpoint URL |
+| `--chain` | TEXT | `ethereum` | Settlement chain: `ethereum`, `algorand`, or `filecoin` |
+| `--algo-url` | TEXT | `http://localhost:4001` | Algorand node URL |
+| `--algo-token` | TEXT | | Algorand API token |
+| `--algo-app-id` | INTEGER | `0` | Algorand payment channel app ID |
+| `--fil-rpc` | TEXT | | Filecoin FEVM RPC URL |
+| `--fil-contract` | TEXT | | PaymentChannel contract address on FEVM |
+| `--ipfs-url` | TEXT | | IPFS HTTP API URL (enables storage) |
+| `--erc8004-identity` | TEXT | | ERC-8004 Identity Registry contract address |
+| `--erc8004-reputation` | TEXT | | ERC-8004 Reputation Registry contract address |
 | `--log-level` | TEXT | `INFO` | Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL |
 | `--identity-path` | PATH | `~/.agentic-payments/identity.key` | Path to Ed25519 identity key file |
 
@@ -534,6 +551,27 @@ The REST API is started alongside the node on `--api-port`. All endpoints return
 |--------|----------|-------------|
 | GET | `/gateway/resources` | List x402 gated resources |
 | POST | `/gateway/register` | Register a gated resource |
+| POST | `/gateway/access` | Verify payment and grant access (x402 flow) |
+| GET | `/gateway/log` | Access audit log |
+
+### ERC-8004 Identity
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/identity/erc8004` | ERC-8004 registration status |
+| POST | `/identity/erc8004/register` | Register agent on-chain |
+| GET | `/identity/erc8004/lookup/:id` | Look up agent by token ID |
+| POST | `/reputation/sync-onchain` | Push trust score to on-chain registry |
+
+### Storage (IPFS)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/storage/status` | IPFS daemon connectivity |
+| POST | `/storage/pin` | Pin data to IPFS |
+| GET | `/storage/get/:cid` | Retrieve content by CID |
+| POST | `/storage/receipts/:channel_id/pin` | Pin receipt chain to IPFS |
+| GET | `/storage/pins` | List pinned objects |
 
 ### curl Examples
 
@@ -572,9 +610,9 @@ curl http://127.0.0.1:8080/balance
 
 ---
 
-## Frontend Dashboard (Browser)
+## Frontend Dashboard
 
-The frontend is a Next.js web app that provides a visual interface for managing two agent nodes side by side.
+The Next.js dashboard at `localhost:3000` provides a real-time multi-agent network view with interactive force-directed graph, trust panels, simulation controls, and monitoring.
 
 ### Setup
 
@@ -590,51 +628,48 @@ Open **http://localhost:3000** in your browser.
 
 ### What you see
 
-The dashboard has three panels:
-
-```
-+-------------------+------------------+-------------------+
-|                   |                  |                   |
-|    AGENT A        |  ACTION PANEL    |    AGENT B        |
-|    (left)         |  (center)        |    (right)        |
-|                   |                  |                   |
-|  - Status dot     |  [Open Channel]  |  - Status dot     |
-|  - Peer ID        |  [Send Payment]  |  - Peer ID        |
-|  - ETH Address    |                  |  - ETH Address    |
-|  - Connected      |  Direction:      |  - Connected      |
-|    peers          |  A -> B / B -> A |    peers          |
-|  - Balance        |                  |  - Balance        |
-|  - Channels       |  Deposit / Amt   |  - Channels       |
-|  - Discovered     |  [Submit]        |  - Discovered     |
-|    peers          |                  |    peers          |
-+-------------------+------------------+-------------------+
-```
-
-| Panel | What it shows |
-|-------|---------------|
-| Agent A card (left) | Online/offline status, Peer ID, ETH address, balance stats (deposited/paid/remaining), active channels with state badges, discovered peers |
-| Agent B card (right) | Same as Agent A but for the second node on port 8081 |
-| Action panel (center) | Two tabs: "Open Channel" and "Send Payment" with direction toggle |
-
-### Agent status indicators
-
-| Indicator | Meaning |
-|-----------|---------|
-| Green pulsing dot + "Online" | Node is running and API is responding |
-| Grey dot + "Offline" | Node is not running or API is unreachable |
+The dashboard has three areas:
+| Area | Description |
+|------|-------------|
+| **Center** | Interactive force-directed network graph. Click nodes to open channels, click edges to send payments. Trust-colored nodes (green/amber/red). |
+| **Left Sidebar** | Network stats, financial summary, trust scores, agent roster. Tabs: Identity, Discovery, Negotiations, SLA, Disputes, Pricing, Receipts, Policies. |
+| **Right Sidebar** | Simulate tab (batch payments, topology), Actions tab (open channel, route payment, negotiate), live event feed. |
 
 ### How to use the dashboard
 
-**Prerequisites**: Both agents must be running (see [Two-agent local test](#two-agent-local-test) below).
+1. Start agents with `./scripts/dev.sh` — nodes appear in the graph automatically
+2. **Open a channel**: Click two nodes in the graph, enter deposit, click "Open Channel"
+3. **Send a payment**: Click a channel edge, enter amount, or use the route payment form for multi-hop HTLC
+4. **Simulate**: Use the Simulate tab to run batch payment rounds across the network
+5. **Negotiate**: Use the Actions tab to propose service terms between agents
+6. **Identity**: Check the Identity tab to view ERC-8004 registration status
 
-#### Step 1: Verify both agents are online
+---
 
-After starting both agents and opening `http://localhost:3000`, both cards should show green "Online" indicators. If a card shows "Offline", check that the corresponding agent is running.
+## Quick Start
 
-#### Step 2: Open a payment channel
+```bash
+# Start multi-agent network + dashboard
+./scripts/dev.sh --agents 3
 
-1. Click the **"Open Channel"** tab in the center panel
-2. Select the direction:
+# Or start manually
+uv run agentpay start --port 9000 --api-port 8080
+uv run agentpay start --port 9100 --ws-port 9101 --api-port 8081 \
+  --identity-path ~/.agentic-payments/identity2.key
+
+# Dashboard
+cd frontend && npm install && npm run dev
+# → http://localhost:3000
+```
+
+## Live End-to-End Testing
+
+```bash
+# Deploy contracts to local Anvil + test all features
+./scripts/deploy_local.sh
+source .env.local
+./scripts/live_test.sh
+```
    - **"Agent A -> Agent B"** means Agent A is the sender (payer)
    - **"Agent B -> Agent A"** means Agent B is the sender
 3. Enter the deposit amount in wei (e.g., `1000000000000000000` for 1 ETH)

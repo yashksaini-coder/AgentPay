@@ -1,6 +1,6 @@
 # Architecture
 
-> Decentralized off-chain payment channels between autonomous AI agents over libp2p + Ethereum/Algorand.
+> Decentralized off-chain payment channels between autonomous AI agents over libp2p + Ethereum/Algorand/Filecoin.
 
 ---
 
@@ -15,39 +15,6 @@ The core insight is that agent-to-agent micropayments need sub-second latency an
   <br />
   <em>System Architecture — Agent nodes, libp2p networking, and Ethereum settlement</em>
 </div>
-
-```mermaid
-graph TB
-    subgraph "Agent Node A"
-        A_ID[Identity<br/>Ed25519 + PeerID]
-        A_WAL[Wallet<br/>secp256k1 + ETH addr]
-        A_HOST[libp2p Host<br/>Noise + Yamux + TCP/WS + mDNS]
-        A_PROTO[Protocol Handler<br/>/agentic-payments/1.0.0]
-        A_GOSSIP[GossipSub<br/>discovery / receipts / caps]
-        A_CM[Channel Manager + Voucher Registry<br/>PROPOSED → ACTIVE → SETTLED]
-        A_API[REST API — Quart-Trio + Hypercorn]
-    end
-
-    subgraph "Agent Node B"
-        B_HOST[libp2p Host<br/>Noise + Yamux + TCP/WS + mDNS]
-    end
-
-    subgraph "Blockchain Settlement Layer"
-        ETH[Ethereum L1/L2<br/>PaymentChannel.sol<br/>open / close / dispute / settle]
-    end
-
-    subgraph "Client Interfaces"
-        DASH[Dashboard<br/>Next.js 15 + React 19 + Tailwind 4]
-        CLI[CLI<br/>agentpay]
-    end
-
-    A_HOST <-->|Yamux Streams| B_HOST
-    A_HOST <-.->|GossipSub mesh| B_HOST
-    A_CM -->|open / deposit| ETH
-    ETH -->|close / withdraw| A_CM
-    DASH -->|REST / JSON| A_API
-    CLI -->|REST / JSON| A_API
-```
 
 ---
 
@@ -162,20 +129,6 @@ The handler runs a read loop on each incoming stream. Each message is dispatched
   <em>Payment Channel State Machine — lifecycle of a single payment channel</em>
 </div>
 
-```mermaid
-stateDiagram-v2
-    [*] --> PROPOSED
-    PROPOSED --> OPEN : accept()
-    OPEN --> ACTIVE : activate()
-    ACTIVE --> ACTIVE : apply_voucher()<br/>cumulative, repeats N times
-    ACTIVE --> CLOSING : request_close()
-    ACTIVE --> DISPUTED : dispute()
-    CLOSING --> DISPUTED : dispute()
-    CLOSING --> SETTLED : settle()
-    DISPUTED --> SETTLED : settle()
-    SETTLED --> [*]
-```
-
 **Transitions:**
 
 | From | To | Trigger | Description |
@@ -254,21 +207,6 @@ The `ChannelManager` is an in-memory registry that tracks all channels for a nod
 
 The `PaymentChannel.sol` contract implements unidirectional payment channels with a challenge period:
 
-```mermaid
-graph LR
-    subgraph "PaymentChannel.sol"
-        OPEN_FN["openChannel(receiver, duration)<br/>payable → channelId<br/><em>Sender deposits ETH</em>"]
-        CLOSE_FN["closeChannel(channelId, amount,<br/>nonce, timestamp, signature)<br/><em>Receiver submits final voucher</em>"]
-        CHALLENGE_FN["challengeClose(channelId, amount,<br/>nonce, timestamp, signature)<br/><em>Anyone challenges with higher nonce</em>"]
-        WITHDRAW_FN["withdraw(channelId)<br/><em>After challenge period expires</em>"]
-    end
-
-    OPEN_FN --> CLOSE_FN
-    CLOSE_FN --> CHALLENGE_FN
-    CHALLENGE_FN --> WITHDRAW_FN
-    CLOSE_FN --> WITHDRAW_FN
-```
-
 | Function | Who calls | What it does |
 |----------|-----------|--------------|
 | `openChannel()` | Sender | Deposits ETH, creates channel struct, returns deterministic `channelId` |
@@ -278,30 +216,7 @@ graph LR
 
 ### 5.2 Settlement Flow
 
-```mermaid
-sequenceDiagram
-    participant S as Sender
-    participant R as Receiver
-    participant C as PaymentChannel.sol
-
-    Note over S,R: Off-chain: Sender signs vouchers n=1,2,...,N<br/>Receiver stores latest (highest-nonce) voucher
-
-    R->>C: closeChannel(channelId, voucher_N)
-    C->>C: Verify sender's ECDSA signature
-    Note over C: Challenge period starts (1 hour min)
-
-    alt Sender disagrees
-        S->>C: challengeClose(higher-nonce voucher)
-        C->>C: Reset challenge timer
-    end
-
-    Note over C: Challenge period expires
-    R->>C: withdraw()
-    C->>R: Transfer closingAmount
-    C->>S: Refund (deposit - closingAmount)
-```
-
-### 5.3 Signature Compatibility
+### 5.2 Signature Compatibility
 
 The voucher hash is computed identically off-chain and on-chain:
 
@@ -329,38 +244,6 @@ Both use EIP-191 `personal_sign` format (`\x19Ethereum Signed Message:\n32` pref
   <br />
   <em>Payment Channel Lifecycle — open, pay, close, settle</em>
 </div>
-
-```mermaid
-sequenceDiagram
-    participant A as Agent A (Sender)
-    participant S as libp2p Stream
-    participant B as Agent B (Receiver)
-
-    Note over A,B: OPEN
-    A->>S: host.new_stream(B, ["/agentic-payments/1.0.0"])
-    A->>B: PaymentOpen(channel_id, sender, receiver, deposit: 1 ETH)
-    B->>B: channel_manager.handle_open_request()
-    B->>A: PaymentAck(accepted)
-    Note over A: PROPOSED → ACTIVE
-
-    Note over A,B: PAYMENTS
-    A->>B: PaymentUpdate(nonce=1, amount=0.1 ETH, sig)
-    B->>B: verify + apply_voucher
-    B->>A: PaymentAck
-    A->>B: PaymentUpdate(nonce=2, amount=0.3 ETH, sig)
-    B->>B: cumulative: 0.3 ETH
-    B->>A: PaymentAck
-    Note over A,B: ...repeats...
-
-    Note over A,B: CLOSE
-    A->>B: PaymentClose(final_nonce=N, final_amount, cooperative=true)
-    B->>A: PaymentAck(accepted)
-    Note over A: CLOSING → SETTLED
-
-    Note over A,B: SETTLE
-    A-->>B: GossipSub broadcast → /agentic/receipts/1.0.0
-    B->>B: On-chain: PaymentChannel.sol → closeChannel(final_voucher)<br/>Receiver gets paid, sender gets deposit refund
-```
 
 ---
 
@@ -473,23 +356,25 @@ CREATE TABLE vouchers (
 
 The entire system runs on **trio**, not asyncio. This is a hard requirement from py-libp2p.
 
-```mermaid
-graph TB
-    TRIO["trio.run(main)"] --> NURSERY[nursery]
-    NURSERY --> NODE["agent_node.start()"]
-    NODE --> HOST["host.run(listen_addrs)<br/><em>context manager, blocks</em>"]
-    HOST --> PUBSUB["_run_pubsub()"]
-    PUBSUB --> PS_CTX[pubsub context manager]
-    PUBSUB --> PS_SUB[subscribe_all()]
-    PUBSUB --> PS_PUB[publish discovery announcement]
-    PUBSUB --> BCAST["broadcaster.run()<br/>per-topic listener tasks"]
-    HOST --> DISC["discovery.run()<br/><em>polls every 10s</em>"]
-    HOST --> API["serve_api()<br/><em>Hypercorn ASGI</em>"]
-    HOST --> SLEEP["sleep_forever()<br/><em>blocks until cancel</em>"]
-    HOST --> STREAMS["incoming streams<br/>→ _handle_incoming_stream()"]
-```
+<div align="center">
+  <img src="images/e2e-code-flow.png" alt="End-to-End Code Flow" width="800" />
+  <br />
+  <em>Node startup sequence and request flow</em>
+</div>
 
-Each incoming payment protocol stream runs in its own implicit task (dispatched by the host). Stream handlers read in a loop until the stream closes or errors.
+The startup sequence in `AgentNode.start()`:
+
+1. Load/generate Ed25519 identity
+2. Initialize chain-aware wallet (Ethereum/Algorand/Filecoin)
+3. Bind settlement contract (optional — requires RPC)
+4. Initialize ERC-8004 identity bridge (optional)
+5. Create libp2p host with Noise + Yamux
+6. Start GossipSub pubsub (4 topics)
+7. Start mDNS peer discovery
+8. Start REST API (Hypercorn ASGI)
+9. Block until cancelled
+
+Each incoming payment protocol stream runs in its own implicit task (dispatched by the host). Stream handlers read in a loop until the stream closes or errors. Per-peer stream locks and per-channel locks prevent concurrent access races.
 
 ---
 

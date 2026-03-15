@@ -10,7 +10,7 @@ from quart import request, websocket
 from quart_trio import QuartTrio
 
 from agentic_payments.disputes.models import DisputeReason, DisputeResolution
-from agentic_payments.gateway.x402 import GatedResource
+from agentic_payments.gateway.x402 import AccessDecision, GatedResource, PaymentProof
 from agentic_payments.negotiation.models import SLATerms
 from agentic_payments.payments.channel import ChannelError
 from agentic_payments.policies.engine import WalletPolicy
@@ -826,6 +826,46 @@ def register_routes(app: QuartTrio) -> None:
             ms = (time.monotonic() - t0) * 1000
             _log_api("/gateway/register", 400, ms, method="POST", error=str(e))
             return {"error": str(e)}, 400
+
+    @app.route("/gateway/access", methods=["POST"])
+    async def gateway_access() -> tuple[dict, int]:
+        """Verify payment and grant access to a gated resource (x402 flow)."""
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        path = data.get("path")
+        if not path:
+            return {"error": "path is required"}, 400
+
+        proof = None
+        if "channel_id" in data:
+            proof = PaymentProof.from_dict(data)
+
+        decision, meta = node.gateway.verify_access(path, proof)
+
+        if decision == AccessDecision.PAYMENT_REQUIRED:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/gateway/access", 402, ms, method="POST", detail=path)
+            return meta, 402
+        elif decision == AccessDecision.GRANTED:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/gateway/access", 200, ms, method="POST", detail=path)
+            return meta, 200
+        else:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/gateway/access", 403, ms, method="POST", error=str(meta))
+            return meta, 403
+
+    @app.route("/gateway/log")
+    async def gateway_log() -> dict:
+        """Return recent gateway access log entries."""
+        t0 = time.monotonic()
+        node = _node()
+        log = node.gateway.get_access_log()
+        _log_api("/gateway/log", 200, (time.monotonic() - t0) * 1000)
+        return {"log": log, "count": len(log)}
 
     # ── Pricing endpoints ──────────────────────────────────────
 

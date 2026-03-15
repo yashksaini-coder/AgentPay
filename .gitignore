@@ -43,6 +43,9 @@ contracts/out/
 contracts/cache/
 contracts/lib/
 
+# Excalidraw source files (PNG exports in docs/images/ are the committed assets)
+diagrams/
+
 # Data
 *.db
 *.sqlite3

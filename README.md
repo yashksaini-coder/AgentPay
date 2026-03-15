@@ -16,7 +16,7 @@
 
 ---
 
-Agents discover each other via **mDNS**, negotiate service terms over **libp2p streams**, exchange **Filecoin-style signed payment vouchers** off-chain, and settle on **Ethereum** or **Algorand**. Built for the [Filecoin Agents](https://filecoin.cloud/agents) ecosystem, [ARIA Scaling Trust](https://www.aria.org.uk/programme/scaling-trust/) programme, and [PL Genesis](https://www.plgenesis.com/) hackathon.
+Agents discover each other via **mDNS**, negotiate service terms over **libp2p streams**, exchange **Filecoin-style signed payment vouchers** off-chain, and settle on **Ethereum**, **Algorand**, or **Filecoin FEVM**. Built for the [Filecoin Agents](https://filecoin.cloud/agents) ecosystem and the [ARIA Scaling Trust](https://www.aria.org.uk/programme/scaling-trust/) programme.
 
 <div align="center">
   <img src="docs/images/system-architecture.png" alt="System Architecture" width="800" />
@@ -35,7 +35,13 @@ AgentPay is structured as a modular agent runtime with six layers:
 - **Storage** — IPFS content-addressed pinning for receipts and capabilities, with CID-based retrieval and GossipSub broadcast
 - **Interfaces** — Quart-Trio REST API (~50 endpoints), Typer CLI (~50 commands), and a Next.js 15 real-time dashboard
 
-> See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system design with 13 Excalidraw diagrams covering every subsystem.
+<div align="center">
+  <img src="docs/images/module-architecture.png" alt="Module Architecture" width="800" />
+  <br />
+  <em>Module dependency map — interface, core, network, business, trust, and settlement layers</em>
+</div>
+
+> See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system design with 13 architecture diagrams.
 
 ## Quick Start
 
@@ -133,7 +139,7 @@ agentpay pricing quote --service inference                         # Dynamic pri
 
 ```bash
 make ci            # Run full CI pipeline locally (lint + format + typecheck + test + frontend + contracts)
-make test          # 549 tests
+make test          # 590 tests
 make lint          # ruff check
 make fmt           # ruff format (auto-fix)
 make typecheck     # mypy

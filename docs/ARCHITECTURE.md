@@ -688,37 +688,37 @@ AgentPay supports both Ethereum and Algorand settlement:
 - Box storage decoding for `(address, address, uint64, uint64, uint64, uint64, bool)` tuples
 - `AlgorandWallet` — Ed25519 key management via algosdk
 
-Chain selection is configured via `chain_type: "ethereum" | "algorand"` in settings.
+Chain selection is configured via `chain_type: "ethereum" | "algorand" | "filecoin"` in settings.
 
 ---
 
 ## 22. Diagrams
 
-Excalidraw diagrams are available in [`/diagrams/`](../diagrams/):
+Architecture diagrams are in [`docs/images/`](images/):
 
-| Diagram | Source | Description |
-|---------|--------|-------------|
-| System Architecture | [`system-architecture.excalidraw`](../diagrams/system-architecture.excalidraw) | Full system with all subsystems, dual-chain settlement, GossipSub topics |
-| Payment Channel Lifecycle | [`payment-flow.excalidraw`](../diagrams/payment-flow.excalidraw) | 8-step sequence: open, payments, close, settle |
-| Channel State Machine | [`state-machine.excalidraw`](../diagrams/state-machine.excalidraw) | 6-state lifecycle: PROPOSED → ACTIVE → SETTLED |
-| Negotiation + Payment Flow | [`negotiation-flow.excalidraw`](../diagrams/negotiation-flow.excalidraw) | Full flow: discovery → negotiate → open → pay → close with SLA tracking |
-| Trust Architecture | [`trust-architecture.excalidraw`](../diagrams/trust-architecture.excalidraw) | Reputation, SLA, disputes, policies, pricing interactions |
-| Module Architecture | [`module-architecture.excalidraw`](../diagrams/module-architecture.excalidraw) | Code module dependencies across 5 layers: interface, core, network, business, trust, settlement |
-| Wire Protocol | [`wire-protocol.excalidraw`](../diagrams/wire-protocol.excalidraw) | All 13 message types with fields, framing format, and message flow |
-| HTLC Multi-Hop Routing | [`htlc-routing.excalidraw`](../diagrams/htlc-routing.excalidraw) | Multi-hop payment via intermediaries: propose → fulfill → cancel with BFS pathfinding |
-| Settlement Flows | [`settlement-flow.excalidraw`](../diagrams/settlement-flow.excalidraw) | Ethereum vs Algorand settlement comparison: contracts, signatures, box storage |
-| Receipt Chain | [`receipt-chain.excalidraw`](../diagrams/receipt-chain.excalidraw) | Hash-chained signed receipts: structure, verification, GossipSub broadcast |
-| ERC-8004 Identity Flow | [`erc8004-identity-flow.excalidraw`](../diagrams/erc8004-identity-flow.excalidraw) | Agent registration, identity bridge, reputation sync to on-chain registry |
-| IPFS Storage Flow | [`ipfs-storage-flow.excalidraw`](../diagrams/ipfs-storage-flow.excalidraw) | Receipt pinning, CID broadcast, retrieval and verification |
-| End-to-End Code Flow | [`e2e-code-flow.excalidraw`](../diagrams/e2e-code-flow.excalidraw) | CLI → node init → libp2p → payment → receipt → settlement lifecycle |
-
-PNG exports are in [`docs/images/`](images/). To edit, open the `.excalidraw` files at [excalidraw.com](https://excalidraw.com).
+| Diagram | Description |
+|---------|-------------|
+| [System Architecture](images/system-architecture.png) | Full system with all subsystems, tri-chain settlement, GossipSub topics |
+| [Payment Channel Lifecycle](images/payment-channel-lifecycle.png) | 8-step sequence: open, payments, close, settle |
+| [Channel State Machine](images/state-machine.png) | 6-state lifecycle: PROPOSED → ACTIVE → SETTLED |
+| [Negotiation + Payment Flow](images/negotiation-flow.png) | Full flow: discovery → negotiate → open → pay → close with SLA tracking |
+| [Trust Architecture](images/trust-architecture.png) | Reputation, SLA, disputes, policies, pricing interactions |
+| [Module Architecture](images/module-architecture.png) | Code module dependencies across 5 layers |
+| [Wire Protocol](images/wire-protocol.png) | All 13 message types with fields, framing format, and message flow |
+| [HTLC Multi-Hop Routing](images/htlc-routing.png) | Multi-hop payment via intermediaries with BFS pathfinding |
+| [ERC-8004 Identity Flow](images/erc8004-identity-flow.png) | Agent registration, identity bridge, reputation sync |
+| [IPFS Storage Flow](images/ipfs-storage-flow.png) | Receipt pinning, CID broadcast, retrieval and verification |
+| [End-to-End Code Flow](images/e2e-code-flow.png) | CLI → node init → libp2p → payment → receipt → settlement |
 
 ---
 
 ## 23. ERC-8004 Agent Identity
 
 AgentPay supports the [ERC-8004 "Trustless Agents"](https://eips.ethereum.org/EIPS/eip-8004) standard for on-chain agent identity and reputation.
+
+<div align="center">
+  <img src="images/erc8004-identity-flow.png" alt="ERC-8004 Identity Flow" width="700" />
+</div>
 
 ### 23.1 Identity Bridge
 

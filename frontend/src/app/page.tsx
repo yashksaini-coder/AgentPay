@@ -5,7 +5,8 @@ import { useAgent, type AgentState } from "@/lib/useAgent";
 import { useNetworkEvents, type NetworkEvent } from "@/lib/useNetworkEvents";
 import { useAgentManager } from "@/lib/useAgentManager";
 import { formatWei, type Channel } from "@/lib/api";
-import NetworkGraph, { type LoadingNode, type GraphInteraction, type AnimatingRoute } from "@/components/NetworkGraph";
+import NetworkGraph, { type LoadingNode, type GraphInteraction, type AnimatingRoute, type PaymentEvent } from "@/components/NetworkGraph";
+import MetricsOverlay from "@/components/MetricsOverlay";
 import DiscoveryPanel from "@/components/DiscoveryPanel";
 import IdentityPanel from "@/components/IdentityPanel";
 import NegotiationTimeline from "@/components/NegotiationTimeline";
@@ -105,6 +106,29 @@ export default function NetworkPage() {
 
   // Metrics history
   const [paymentHistory, setPaymentHistory] = useState<{ t: string; amount: number }[]>([]);
+
+  // netviz-inspired: derive PaymentEvent[] for graph particle bursts + pulse rings
+  const paymentEventsForGraph = useMemo<PaymentEvent[]>(() => {
+    return events
+      .filter((e) => e.type === "payment")
+      .slice(0, 20)
+      .map((e) => {
+        // Parse channel ID and amount from meta (format: "nonce: X, paid: Y" or "ID...")
+        const channelMatch = e.meta?.match(/^([a-f0-9]{8,})/i);
+        const paidMatch = e.meta?.match(/paid:\s*(\d+)/);
+        // Find sender/receiver peer IDs from agent labels
+        const senderAgent = allAgents.find((a) => a.online && agentLabel(allAgents.indexOf(a)) === e.from);
+        const receiverAgent = e.to ? allAgents.find((a) => a.online && agentLabel(allAgents.indexOf(a)) === e.to) : undefined;
+        return {
+          channelId: channelMatch?.[1] ?? "",
+          amount: paidMatch ? parseInt(paidMatch[1], 10) : 0,
+          timestamp: e.timestamp,
+          senderPeerId: senderAgent?.identity?.peer_id ?? undefined,
+          receiverPeerId: receiverAgent?.identity?.peer_id ?? undefined,
+        };
+      })
+      .filter((pe) => pe.channelId.length > 0);
+  }, [events, allAgents]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const paymentEvents = events.filter((e) => e.type === "payment");
     if (paymentEvents.length === 0) return;
@@ -415,7 +439,10 @@ export default function NetworkPage() {
 
         {/* ── Center: graph ── */}
         <main className="flex-1 relative min-h-0">
-          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} animatingRoute={animatingRoute} onInteraction={handleGraphInteraction} agentLabels={agentLabel} trustScores={trustScores} />
+          <NetworkGraph agents={allAgents} loadingNodes={loadingNodes} animatingRoute={animatingRoute} onInteraction={handleGraphInteraction} agentLabels={agentLabel} trustScores={trustScores} paymentEvents={paymentEventsForGraph} />
+
+          {/* netviz-inspired: metrics overlay on graph */}
+          <MetricsOverlay events={events} activeChannels={allAgents.reduce((s, a) => s + a.channels.filter(c => c.state === "ACTIVE").length, 0)} totalAgents={allAgents.filter(a => a.online).length} />
 
           {/* Interaction popup overlay */}
           {interaction && (

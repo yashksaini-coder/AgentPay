@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import type { AgentState } from "@/lib/useAgent";
-import { shortenId } from "@/lib/api";
+import { shortenId, formatWei } from "@/lib/api";
 import dynamic from "next/dynamic";
 
 // Lazy-load react-force-graph-2d to avoid SSR issues (Canvas/window)
@@ -30,6 +30,7 @@ interface GraphLink {
   active: boolean;
   label?: string;
   channelId?: string;
+  utilization?: number; // 0.0 (fresh) to 1.0 (fully spent)
 }
 
 export interface LoadingNode {
@@ -50,14 +51,25 @@ export interface AnimatingRoute {
   type: "payment" | "channel";
 }
 
+export interface PaymentEvent {
+  channelId: string;
+  amount: number;
+  timestamp: number;
+  senderPeerId?: string;
+  receiverPeerId?: string;
+}
+
 // ── Colors ─────────────────────────────────────────────────
 const NODE_COLOR = "#8b8fa3";
 const NODE_COLOR_OFFLINE = "#3a3a4a";
-const LINK_CHANNEL = "rgba(255,255,255,0.25)";
 const LINK_P2P = "rgba(255,255,255,0.06)";
 const PARTICLE_CHANNEL = "rgba(255,255,255,0.6)";
 const PARTICLE_P2P = "rgba(255,255,255,0.15)";
 const NODE_GLOW = "rgba(139,143,163,0.15)";
+const PULSE_GREEN = "#34d399";
+const PULSE_AMBER = "#fbbf24";
+const PULSE_RED = "#f87171";
+const TRANSFER_FLASH = "#fbbf24";
 
 function agentLetter(i: number) { return String.fromCharCode(65 + i); }
 
@@ -69,6 +81,7 @@ export default function NetworkGraph({
   onInteraction,
   agentLabels,
   trustScores = {},
+  paymentEvents = [],
 }: {
   agents: AgentState[];
   loadingNodes?: LoadingNode[];
@@ -76,9 +89,11 @@ export default function NetworkGraph({
   onInteraction?: (interaction: GraphInteraction) => void;
   agentLabels?: (i: number) => string;
   trustScores?: Record<string, number>;
+  paymentEvents?: PaymentEvent[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fgRef = useRef<{ d3Force: (name: string, force?: unknown) => unknown } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fgRef = useRef<any>(null);
   const selectedNodeRef = useRef<string | null>(null);
   const onInteractionRef = useRef(onInteraction);
   onInteractionRef.current = onInteraction;
@@ -87,6 +102,13 @@ export default function NetworkGraph({
   animatingRouteRef.current = animatingRoute;
   const trustScoresRef = useRef(trustScores);
   trustScoresRef.current = trustScores;
+
+  // netviz-inspired: pulse rings for state transitions
+  const pulseRingsRef = useRef<Map<string, { startTime: number; color: string }>>(new Map());
+  // netviz-inspired: recent transfer amounts for flash labels
+  const recentTransfersRef = useRef<Map<string, { amount: number; timestamp: number }>>(new Map());
+  // Track processed payment event timestamps to avoid duplicates
+  const processedEventsRef = useRef(new Set<string>());
 
   // Track container dimensions for responsive sizing
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 600 });
@@ -108,6 +130,56 @@ export default function NetworkGraph({
     loadingNodeSetRef.current = new Set(loadingNodes.map((n) => n.peerId));
   }, [loadingNodes]);
 
+  // netviz-inspired: emit particle bursts + pulse rings on payment events
+  useEffect(() => {
+    for (const evt of paymentEvents) {
+      const key = `${evt.channelId}-${evt.timestamp}`;
+      if (processedEventsRef.current.has(key)) continue;
+      processedEventsRef.current.add(key);
+
+      // Flash transfer amount on the channel link
+      recentTransfersRef.current.set(evt.channelId, {
+        amount: evt.amount,
+        timestamp: Date.now(),
+      });
+
+      // Pulse rings on sender and receiver nodes
+      if (evt.senderPeerId) {
+        pulseRingsRef.current.set(evt.senderPeerId, {
+          startTime: Date.now(),
+          color: PULSE_AMBER,
+        });
+      }
+      if (evt.receiverPeerId) {
+        pulseRingsRef.current.set(evt.receiverPeerId, {
+          startTime: Date.now(),
+          color: PULSE_GREEN,
+        });
+      }
+
+      // Emit particle burst on the matching link
+      const fg = fgRef.current;
+      if (fg && typeof fg.emitParticle === "function") {
+        const graphLinks = fg.graphData?.()?.links ?? [];
+        const matchingLink = graphLinks.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (l: any) => l.channelId === evt.channelId
+        );
+        if (matchingLink) {
+          for (let i = 0; i < 4; i++) {
+            setTimeout(() => fg.emitParticle(matchingLink), i * 60);
+          }
+        }
+      }
+    }
+
+    // Cleanup old processed events (keep last 200)
+    if (processedEventsRef.current.size > 200) {
+      const arr = [...processedEventsRef.current];
+      processedEventsRef.current = new Set(arr.slice(-100));
+    }
+  }, [paymentEvents]);
+
   // Build graph data
   const graphData = useMemo(() => {
     const nodes: GraphNode[] = [];
@@ -128,7 +200,7 @@ export default function NetworkGraph({
       });
     });
 
-    // Channels
+    // Channels — with utilization for health gradient
     const seenLinks = new Set<string>();
     agents.forEach((agent) => {
       for (const ch of agent.channels) {
@@ -139,6 +211,9 @@ export default function NetworkGraph({
             const linkId = `ch-${ch.channel_id.slice(0, 12)}`;
             if (!seenLinks.has(linkId)) {
               seenLinks.add(linkId);
+              const utilization = ch.total_deposit > 0
+                ? ch.total_paid / ch.total_deposit
+                : 0;
               links.push({
                 id: linkId,
                 source: sa.identity.peer_id,
@@ -147,6 +222,7 @@ export default function NetworkGraph({
                 active: ch.state === "ACTIVE",
                 label: ch.channel_id.slice(0, 8),
                 channelId: ch.channel_id,
+                utilization,
               });
             }
           }
@@ -283,13 +359,34 @@ export default function NetworkGraph({
       ctx.stroke();
     }
 
+    // netviz-inspired: expanding pulse ring on state transitions
+    const pulse = pulseRingsRef.current.get(node.id);
+    if (pulse) {
+      const elapsed = Date.now() - pulse.startTime;
+      const duration = 1500;
+      if (elapsed > duration) {
+        pulseRingsRef.current.delete(node.id);
+      } else {
+        const progress = elapsed / duration;
+        const ringRadius = r + (25 * progress);
+        const alpha = (1 - progress) * 0.6;
+        ctx.beginPath();
+        ctx.arc(x, y, ringRadius, 0, 2 * Math.PI);
+        ctx.strokeStyle = pulse.color;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = (2.5 - progress * 1.5) / globalScale;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+
     // Main circle
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 2 * Math.PI);
     // Color by trust score if available (green=high, amber=mid, red=low)
     const ts = node.peerId ? trustScoresRef.current[node.peerId] : undefined;
     const baseColor = !node.online ? NODE_COLOR_OFFLINE
-      : ts !== undefined ? (ts >= 0.7 ? "#34d399" : ts >= 0.4 ? "#fbbf24" : "#f87171")
+      : ts !== undefined ? (ts >= 0.7 ? PULSE_GREEN : ts >= 0.4 ? PULSE_AMBER : PULSE_RED)
       : NODE_COLOR;
     ctx.fillStyle = baseColor;
     ctx.globalAlpha = node.online ? 0.85 : 0.3;
@@ -321,27 +418,70 @@ export default function NetworkGraph({
     ctx.beginPath();
     ctx.moveTo(source.x, source.y);
     ctx.lineTo(target.x, target.y);
-    ctx.strokeStyle = link.type === "channel" ? LINK_CHANNEL : LINK_P2P;
-    ctx.lineWidth = (link.type === "channel" ? 1.5 : 0.5) / globalScale;
+
+    // netviz-inspired: channel health gradient (green → amber → red by utilization)
+    if (link.type === "channel" && link.utilization !== undefined && link.utilization > 0) {
+      const u = link.utilization;
+      const gradient = ctx.createLinearGradient(source.x, source.y, target.x, target.y);
+      if (u < 0.5) {
+        gradient.addColorStop(0, `rgba(52,211,153,${0.25 + u * 0.3})`);
+        gradient.addColorStop(1, `rgba(251,191,36,${0.15 + u * 0.35})`);
+      } else {
+        gradient.addColorStop(0, `rgba(251,191,36,${0.35 + (u - 0.5) * 0.2})`);
+        gradient.addColorStop(1, `rgba(248,113,113,${0.25 + (u - 0.5) * 0.5})`);
+      }
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = (1.5 + u * 1.5) / globalScale;
+    } else {
+      ctx.strokeStyle = link.type === "channel" ? "rgba(255,255,255,0.25)" : LINK_P2P;
+      ctx.lineWidth = (link.type === "channel" ? 1.5 : 0.5) / globalScale;
+    }
     ctx.stroke();
 
-    // Channel label
-    if (link.type === "channel" && link.label && globalScale > 0.5) {
+    // Channel label + transfer flash
+    if (link.type === "channel" && globalScale > 0.5) {
       const mx = (source.x + target.x) / 2;
       const my = (source.y + target.y) / 2;
-      const fontSize = Math.max(7, 9 / globalScale);
-      ctx.font = `${fontSize}px JetBrains Mono, monospace`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
 
-      // Background
-      const metrics = ctx.measureText(link.label);
-      const pad = 3 / globalScale;
-      ctx.fillStyle = "rgba(6,6,11,0.85)";
-      ctx.fillRect(mx - metrics.width / 2 - pad, my - fontSize / 2 - pad, metrics.width + pad * 2, fontSize + pad * 2);
+      // netviz-inspired: flash transfer amount above channel label
+      if (link.channelId) {
+        const transfer = recentTransfersRef.current.get(link.channelId);
+        if (transfer) {
+          const elapsed = Date.now() - transfer.timestamp;
+          const fadeDuration = 2500;
+          if (elapsed > fadeDuration) {
+            recentTransfersRef.current.delete(link.channelId);
+          } else {
+            const alpha = 1 - (elapsed / fadeDuration);
+            const offsetY = -14 / globalScale;
+            const flashSize = Math.max(8, 11 / globalScale);
+            ctx.font = `bold ${flashSize}px JetBrains Mono, monospace`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.globalAlpha = alpha * 0.95;
+            ctx.fillStyle = TRANSFER_FLASH;
+            ctx.fillText(formatWei(transfer.amount), mx, my + offsetY);
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
 
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.fillText(link.label, mx, my);
+      // Static channel label
+      if (link.label) {
+        const fontSize = Math.max(7, 9 / globalScale);
+        ctx.font = `${fontSize}px JetBrains Mono, monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // Background
+        const metrics = ctx.measureText(link.label);
+        const pad = 3 / globalScale;
+        ctx.fillStyle = "rgba(6,6,11,0.85)";
+        ctx.fillRect(mx - metrics.width / 2 - pad, my - fontSize / 2 - pad, metrics.width + pad * 2, fontSize + pad * 2);
+
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.fillText(link.label, mx, my);
+      }
     }
   }, []);
 
@@ -392,9 +532,9 @@ export default function NetworkGraph({
           ctx.fill();
         }) as any}
         linkCanvasObject={paintLink as any}
-        linkDirectionalParticles={((link: any) => link.type === "channel" ? 2 : 1) as any}
-        linkDirectionalParticleWidth={((link: any) => link.type === "channel" ? 2 : 1) as any}
-        linkDirectionalParticleSpeed={0.004}
+        linkDirectionalParticles={((link: any) => link.type === "channel" ? 1 : 0) as any}
+        linkDirectionalParticleWidth={((link: any) => link.type === "channel" ? 2.5 : 1) as any}
+        linkDirectionalParticleSpeed={0.005}
         linkDirectionalParticleColor={((link: any) => link.type === "channel" ? PARTICLE_CHANNEL : PARTICLE_P2P) as any}
         onNodeClick={((node: any) => handleNodeClick(node)) as any}
         onLinkClick={((link: any) => handleLinkClick(link)) as any}

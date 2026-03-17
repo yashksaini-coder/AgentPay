@@ -1,13 +1,29 @@
 "use client";
 
 import type { NetworkEvent } from "@/lib/useNetworkEvents";
+import {
+  Search,
+  Zap,
+  ArrowRightLeft,
+  X,
+  Info,
+  Handshake,
+  Fingerprint,
+  HardDrive,
+  ShieldCheck,
+} from "lucide-react";
+import type { ReactNode } from "react";
 
-const typeConfig: Record<string, { color: string; icon: string; bg: string }> = {
-  discovery: { color: "text-accent", icon: "D", bg: "bg-accent-subtle" },
-  channel_open: { color: "text-success", icon: "C", bg: "bg-success-subtle" },
-  payment: { color: "text-warning", icon: "$", bg: "bg-warning-subtle" },
-  channel_close: { color: "text-danger", icon: "X", bg: "bg-danger-subtle" },
-  status: { color: "text-text-secondary", icon: "i", bg: "bg-surface-overlay" },
+const typeConfig: Record<string, { color: string; icon: ReactNode; bg: string }> = {
+  discovery: { color: "text-accent", icon: <Search size={11} />, bg: "bg-accent-subtle" },
+  negotiate: { color: "text-accent", icon: <Handshake size={11} />, bg: "bg-accent-subtle" },
+  channel_open: { color: "text-success", icon: <Zap size={11} />, bg: "bg-success-subtle" },
+  payment: { color: "text-warning", icon: <ArrowRightLeft size={11} />, bg: "bg-warning-subtle" },
+  channel_close: { color: "text-danger", icon: <X size={11} />, bg: "bg-danger-subtle" },
+  erc8004: { color: "text-accent", icon: <Fingerprint size={11} />, bg: "bg-accent-subtle" },
+  storage: { color: "text-accent", icon: <HardDrive size={11} />, bg: "bg-accent-subtle" },
+  gateway: { color: "text-accent", icon: <ShieldCheck size={11} />, bg: "bg-accent-subtle" },
+  status: { color: "text-text-secondary", icon: <Info size={11} />, bg: "bg-surface-overlay" },
 };
 
 export default function EventLog({ events }: { events: NetworkEvent[] }) {
@@ -53,9 +69,9 @@ function EventRow({ event }: { event: NetworkEvent }) {
         {ts}
       </span>
 
-      {/* Type badge */}
+      {/* Type badge — Lucide icon */}
       <span
-        className={`shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${config.bg} ${config.color}`}
+        className={`shrink-0 w-5 h-5 rounded flex items-center justify-center ${config.bg} ${config.color}`}
       >
         {config.icon}
       </span>

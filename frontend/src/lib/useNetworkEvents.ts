@@ -7,7 +7,7 @@ import type { Channel } from "./api";
 export interface NetworkEvent {
   id: string;
   timestamp: number;
-  type: "discovery" | "negotiate" | "channel_open" | "payment" | "channel_close" | "status";
+  type: "discovery" | "negotiate" | "channel_open" | "payment" | "channel_close" | "erc8004" | "storage" | "gateway" | "status";
   from: string;
   to?: string;
   message: string;

@@ -39,8 +39,15 @@ def create_app(node: Any) -> QuartTrio:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        if response.status_code == 405 and quart_request.method == "OPTIONS":
-            response.status_code = 204
+        if quart_request.method == "OPTIONS":
+            if "Access-Control-Allow-Origin" not in response.headers:
+                logger.warning(
+                    "cors_options_no_origin",
+                    origin=origin,
+                    path=quart_request.path,
+                )
+            if response.status_code == 405:
+                response.status_code = 204
         return response
 
     return app

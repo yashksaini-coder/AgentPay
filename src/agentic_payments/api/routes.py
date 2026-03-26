@@ -11,6 +11,8 @@ from quart_trio import QuartTrio
 
 from agentic_payments.disputes.models import DisputeReason, DisputeResolution
 from agentic_payments.gateway.x402 import AccessDecision, GatedResource, PaymentProof
+from agentic_payments.agent.task import AgentTask, TaskStatus
+from agentic_payments.node.roles import AgentRole, RoleAssignment, WorkRound
 from agentic_payments.negotiation.models import SLATerms
 from agentic_payments.payments.channel import ChannelError
 from agentic_payments.policies.engine import WalletPolicy
@@ -318,8 +320,9 @@ def register_routes(app: QuartTrio) -> None:
         except ValueError:
             return {"error": "channel_id is not valid hex"}, 400
 
+        task_id = data.get("task_id", "")
         try:
-            voucher = await node.pay(channel_id=cid, amount=amount_int)
+            voucher = await node.pay(channel_id=cid, amount=amount_int, task_id=task_id)
             ms = (time.monotonic() - t0) * 1000
             _log_api(
                 "/pay", 200, ms, method="POST", detail=f"nonce={voucher.nonce} amount={amount_int}"
@@ -405,6 +408,8 @@ def register_routes(app: QuartTrio) -> None:
             "eth_address": node.wallet.address if node.wallet else None,
             "addrs": node.listen_addrs,
             "connected_peers": len(node.get_connected_peers()) if node.host else 0,
+            "eip191_bound": node.identity_proof is not None if hasattr(node, "identity_proof") else False,
+            "verified_peers": list(node._verified_identities.keys()) if hasattr(node, "_verified_identities") else [],
         }
         _log_api(
             "/identity", 200, (time.monotonic() - t0) * 1000, detail=result.get("peer_id", "")[:12]
@@ -935,6 +940,44 @@ def register_routes(app: QuartTrio) -> None:
             _log_api("/gateway/access", 403, ms, method="POST", error=str(meta))
             return meta, 403
 
+    @app.route("/gateway/pay-oneshot", methods=["POST"])
+    async def gateway_pay_oneshot() -> tuple[dict, int]:
+        """One-shot x402 payment for stateless per-request settlement."""
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        path = data.get("path")
+        sender = data.get("sender")
+        amount = data.get("amount")
+        if not path:
+            return {"error": "path is required"}, 400
+        if not sender:
+            return {"error": "sender is required"}, 400
+        if amount is None:
+            return {"error": "amount is required"}, 400
+        try:
+            amount_int = int(amount)
+        except (ValueError, TypeError):
+            return {"error": "amount must be an integer"}, 400
+
+        decision, meta = node.gateway.settle_oneshot(
+            path=path,
+            sender=sender,
+            amount=amount_int,
+            signature=data.get("signature", ""),
+            task_id=data.get("task_id", ""),
+        )
+
+        ms = (time.monotonic() - t0) * 1000
+        if decision == AccessDecision.GRANTED:
+            _log_api("/gateway/pay-oneshot", 200, ms, method="POST", detail=path)
+            return meta, 200
+        else:
+            _log_api("/gateway/pay-oneshot", 402, ms, method="POST", detail=path)
+            return meta, 402
+
     @app.route("/gateway/log")
     async def gateway_log() -> dict:
         """Return recent gateway access log entries."""
@@ -1234,3 +1277,189 @@ def register_routes(app: QuartTrio) -> None:
         pinned = node.ipfs_receipt_store.list_pinned()
         _log_api("/storage/pins", 200, (time.monotonic() - t0) * 1000)
         return pinned
+
+    # ── Role-Based Coordination endpoints ──────────────────────
+
+    @app.route("/role")
+    async def get_role() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        rm = node.role_manager
+        result = {
+            "role": rm.role.value if rm.role else None,
+            "assignment": rm.assignment.to_dict() if rm.assignment else None,
+        }
+        _log_api("/role", 200, (time.monotonic() - t0) * 1000)
+        return result
+
+    @app.route("/role", methods=["PUT"])
+    async def set_role() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        role_str = data.get("role")
+        if not role_str:
+            return {"error": "role is required"}, 400
+        try:
+            role = AgentRole(role_str)
+        except ValueError:
+            valid = [r.value for r in AgentRole]
+            return {"error": f"Invalid role. Valid roles: {valid}"}, 400
+        assignment = RoleAssignment(
+            role=role,
+            capabilities=data.get("capabilities", []),
+            max_concurrent_tasks=data.get("max_concurrent_tasks", 10),
+            metadata=data.get("metadata", {}),
+        )
+        node.role_manager.assign_role(assignment)
+        ms = (time.monotonic() - t0) * 1000
+        _log_api("/role", 200, ms, method="PUT", detail=role.value)
+        return {"assignment": assignment.to_dict()}, 200
+
+    @app.route("/role", methods=["DELETE"])
+    async def clear_role() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        node.role_manager.clear_role()
+        _log_api("/role", 200, (time.monotonic() - t0) * 1000, method="DELETE")
+        return {"status": "role cleared"}, 200
+
+    @app.route("/work-rounds")
+    async def list_work_rounds() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        rounds = [wr.to_dict() for wr in node.role_manager.list_work_rounds()]
+        _log_api("/work-rounds", 200, (time.monotonic() - t0) * 1000)
+        return {"work_rounds": rounds, "count": len(rounds)}
+
+    @app.route("/work-rounds", methods=["POST"])
+    async def create_work_round() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        data = await request.get_json()
+        if not data:
+            return {"error": "JSON body required"}, 400
+        round_id = data.get("round_id")
+        task_type = data.get("task_type")
+        if not round_id or not task_type:
+            return {"error": "round_id and task_type are required"}, 400
+        try:
+            wr = WorkRound(
+                round_id=round_id,
+                coordinator_peer_id=node.peer_id.to_base58() if node.peer_id else "",
+                task_type=task_type,
+                required_role=AgentRole(data.get("required_role", "worker")),
+                max_workers=data.get("max_workers", 10),
+                reward_per_worker=data.get("reward_per_worker", 0),
+                metadata=data.get("metadata", {}),
+            )
+            node.role_manager.create_work_round(wr)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/work-rounds", 201, ms, method="POST", detail=round_id)
+            return {"work_round": wr.to_dict()}, 201
+        except ValueError as e:
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/work-rounds", 400, ms, method="POST", error=str(e))
+            return {"error": str(e)}, 400
+
+    # ── Agent Runtime Endpoints ──────────────────────────────────────────
+
+    @app.route("/agent/status")
+    async def agent_status() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if node.runtime is None:
+            _log_api("/agent/status", 200, (time.monotonic() - t0) * 1000)
+            return {"enabled": False, "running": False}, 200
+        status = node.runtime.status()
+        status["enabled"] = True
+        _log_api("/agent/status", 200, (time.monotonic() - t0) * 1000)
+        return status, 200
+
+    @app.route("/agent/tasks")
+    async def agent_list_tasks() -> dict:
+        t0 = time.monotonic()
+        node = _node()
+        if node.runtime is None:
+            _log_api("/agent/tasks", 200, (time.monotonic() - t0) * 1000)
+            return {"tasks": [], "count": 0}
+        status_filter = request.args.get("status")
+        if status_filter:
+            try:
+                ts = TaskStatus(status_filter)
+            except ValueError:
+                return {"error": f"Invalid status: {status_filter}"}, 400
+            tasks = node.runtime.task_store.by_status(ts)
+        else:
+            tasks = node.runtime.task_store.all_tasks()
+        _log_api("/agent/tasks", 200, (time.monotonic() - t0) * 1000)
+        return {"tasks": [t.to_dict() for t in tasks], "count": len(tasks)}
+
+    @app.route("/agent/tasks", methods=["POST"])
+    async def agent_create_task() -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if node.runtime is None:
+            return {"error": "Agent runtime not enabled"}, 400
+        data = await request.get_json()
+        if not data or not data.get("description"):
+            return {"error": "description is required"}, 400
+        task = AgentTask(
+            task_id=data.get("task_id", ""),
+            description=data["description"],
+            requester_peer_id=data.get("requester_peer_id", ""),
+            amount=data.get("amount", 0),
+        )
+        task = node.runtime.task_store.add(task)
+        ms = (time.monotonic() - t0) * 1000
+        _log_api("/agent/tasks", 201, ms, method="POST", detail=task.task_id)
+        return {"task": task.to_dict()}, 201
+
+    @app.route("/agent/tasks/<task_id>")
+    async def agent_get_task(task_id: str) -> tuple[dict, int]:
+        t0 = time.monotonic()
+        node = _node()
+        if node.runtime is None:
+            return {"error": "Agent runtime not enabled"}, 400
+        task = node.runtime.task_store.get(task_id)
+        if task is None:
+            _log_api(f"/agent/tasks/{task_id}", 404, (time.monotonic() - t0) * 1000)
+            return {"error": f"Task {task_id} not found"}, 404
+        _log_api(f"/agent/tasks/{task_id}", 200, (time.monotonic() - t0) * 1000)
+        return {"task": task.to_dict()}, 200
+
+    @app.route("/agent/execute", methods=["POST"])
+    async def agent_execute_task() -> tuple[dict, int]:
+        """Manually trigger task execution (bypass tick loop)."""
+        t0 = time.monotonic()
+        node = _node()
+        if node.runtime is None:
+            return {"error": "Agent runtime not enabled"}, 400
+        data = await request.get_json()
+        if not data or not data.get("task_id"):
+            return {"error": "task_id is required"}, 400
+        task_id = data["task_id"]
+        task = node.runtime.task_store.get(task_id)
+        if task is None:
+            return {"error": f"Task {task_id} not found"}, 404
+        if task.status not in (TaskStatus.PENDING, TaskStatus.ASSIGNED):
+            return {"error": f"Task is {task.status}, cannot execute"}, 400
+        try:
+            if task.status == TaskStatus.PENDING:
+                node.runtime.task_store.update_status(task_id, TaskStatus.ASSIGNED)
+            node.runtime.task_store.update_status(task_id, TaskStatus.EXECUTING)
+            result = await node.runtime.executor.execute(task)
+            task.result = result
+            node.runtime.task_store.update_status(task_id, TaskStatus.COMPLETED)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/agent/execute", 200, ms, method="POST", detail=task_id)
+            return {"task": task.to_dict()}, 200
+        except Exception as exc:
+            task.error = str(exc)
+            if task.status == TaskStatus.EXECUTING:
+                node.runtime.task_store.update_status(task_id, TaskStatus.FAILED)
+            ms = (time.monotonic() - t0) * 1000
+            _log_api("/agent/execute", 500, ms, method="POST", error=str(exc))
+            return {"error": str(exc), "task": task.to_dict()}, 500

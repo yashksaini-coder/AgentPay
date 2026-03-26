@@ -66,7 +66,12 @@ class Wallet:
         return signed.raw_transaction
 
     def sign_message(self, message_hash: bytes) -> bytes:
-        """Sign a message hash (EIP-191 personal sign)."""
+        """Sign a message hash with EIP-191 personal_sign wrapping.
+
+        The input bytes are wrapped with the EIP-191 prefix
+        (``\\x19Ethereum Signed Message:\\n`` + length) before signing.
+        Use ``eth_account.messages.encode_defunct`` for the same transformation.
+        """
         from eth_account.messages import encode_defunct
 
         signable = encode_defunct(message_hash)

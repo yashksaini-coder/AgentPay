@@ -111,8 +111,7 @@ class AlgorandWallet:
             signed = signing_key.sign(data)
             return signed.signature
         except ImportError:
-            # Fallback: sign a transaction containing the data hash
-            import hashlib
-
-            logger.warning("nacl_not_available", msg="Using algosdk fallback for signing")
-            return hashlib.sha256(data + raw_key[:32]).digest()
+            raise ImportError(
+                "PyNaCl is required for Algorand byte signing. "
+                "Install with: pip install pynacl>=1.5"
+            )

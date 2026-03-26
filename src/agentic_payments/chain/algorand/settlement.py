@@ -11,12 +11,13 @@ import struct
 from typing import Any
 
 import structlog
+import trio
 
 logger = structlog.get_logger(__name__)
 
 try:
     from algosdk.v2client import algod, indexer
-    from algosdk import transaction, encoding
+    from algosdk import logic, transaction, encoding
 
     HAS_ALGOSDK = True
 except ImportError:
@@ -188,9 +189,7 @@ class AlgorandSettlement:
         )
 
         # Payment transaction for deposit (sent to application address)
-        app_address = encoding.encode_address(
-            encoding.checksum(b"appID" + self.app_id.to_bytes(8, "big"))
-        )
+        app_address = logic.get_application_address(self.app_id)
         pay_txn = transaction.PaymentTxn(
             sender=self.wallet.address,
             sp=params,
@@ -206,8 +205,12 @@ class AlgorandSettlement:
         signed_app = self.wallet.sign_transaction(app_txn)
         signed_pay = self.wallet.sign_transaction(pay_txn)
 
-        tx_id = self.client.send_transactions([signed_app, signed_pay])
-        pending = _wait_for_confirmation(self.client, tx_id)
+        tx_id = await trio.to_thread.run_sync(
+            lambda: self.client.send_transactions([signed_app, signed_pay])
+        )
+        pending = await trio.to_thread.run_sync(
+            lambda: _wait_for_confirmation(self.client, tx_id)
+        )
 
         # Generate deterministic channel_id from confirmed round
         confirmed_round = pending.get("confirmed-round", 0)
@@ -251,7 +254,7 @@ class AlgorandSettlement:
             ],
         )
 
-        tx_id = self._sign_and_submit(txn)
+        tx_id = await trio.to_thread.run_sync(self._sign_and_submit, txn)
         logger.info("algorand_channel_close_confirmed", tx_id=tx_id, channel=channel_id.hex()[:12])
         return tx_id
 
@@ -281,7 +284,7 @@ class AlgorandSettlement:
             ],
         )
 
-        tx_id = self._sign_and_submit(txn)
+        tx_id = await trio.to_thread.run_sync(self._sign_and_submit, txn)
         logger.info("algorand_challenge_confirmed", tx_id=tx_id, channel=channel_id.hex()[:12])
         return tx_id
 
@@ -297,7 +300,7 @@ class AlgorandSettlement:
             app_args=[b"withdraw", channel_id],
         )
 
-        tx_id = self._sign_and_submit(txn)
+        tx_id = await trio.to_thread.run_sync(self._sign_and_submit, txn)
         logger.info("algorand_withdraw_confirmed", tx_id=tx_id, channel=channel_id.hex()[:12])
         return tx_id
 

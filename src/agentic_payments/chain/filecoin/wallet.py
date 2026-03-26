@@ -48,6 +48,13 @@ def f4_to_eth_address(f4_address: str) -> str:
     # Last 4 bytes (encoded) are checksum, rest is the address
     decoded = _base32_decode(payload)
     addr_bytes = decoded[:20]
+    checksum = decoded[20:24]
+    expected_checksum = _blake2b_checksum(b"\x04\x0a" + addr_bytes)
+    if checksum != expected_checksum:
+        raise ValueError(
+            f"f4 address checksum mismatch: expected {expected_checksum.hex()}, "
+            f"got {checksum.hex()}"
+        )
     return "0x" + addr_bytes.hex()
 
 

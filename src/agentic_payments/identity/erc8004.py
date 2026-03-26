@@ -143,7 +143,12 @@ class ERC8004Client:
 
             # Parse AgentRegistered event
             logs = self.identity.events.AgentRegistered().process_receipt(receipt)
-            agent_id = logs[0]["args"]["agentId"] if logs else 0
+            if not logs:
+                raise RuntimeError(
+                    "AgentRegistered event not found in transaction receipt; "
+                    "registration may have failed"
+                )
+            agent_id = logs[0]["args"]["agentId"]
 
             return agent_id, tx_hash.hex()
 

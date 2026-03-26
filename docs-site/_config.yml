@@ -5,12 +5,12 @@ baseurl: "/AgentPay"
 theme: just-the-docs
 
 aux_links:
-  "Live Dashboard": "https://app.agentpay.io"
+  "Live Dashboard": "http://agentpay.yashksaini.systems/"
   "GitHub": "https://github.com/yashksaini-coder/AgentPay"
 
 nav_external_links:
   - title: Dashboard
-    url: https://app.agentpay.io
+    url: http://agentpay.yashksaini.systems/
 
 color_scheme: dark
 search_enabled: true

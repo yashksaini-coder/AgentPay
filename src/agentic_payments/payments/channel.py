@@ -171,7 +171,7 @@ class PaymentChannel:
         Can be called during the challenge period to submit evidence of
         a higher-nonce state. Resets the challenge timer.
         """
-        self._transition({ChannelState.ACTIVE, ChannelState.CLOSING}, ChannelState.DISPUTED)
+        self._transition({ChannelState.CLOSING}, ChannelState.DISPUTED)
 
         if voucher is not None:
             if voucher.nonce <= self.closing_nonce:
@@ -229,7 +229,7 @@ class PaymentChannel:
         self._transition({ChannelState.ACTIVE}, ChannelState.CLOSING)
         now = int(time.time())
         self.close_initiated_at = now
-        self.close_expiration = now  # Expires immediately
+        self.close_expiration = 0  # No challenge period for cooperative close
         self.closing_nonce = self.nonce
         self.closing_amount = self.total_paid
         logger.info(

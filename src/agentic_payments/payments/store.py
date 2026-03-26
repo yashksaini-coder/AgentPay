@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS payment_channels (
     nonce BIGINT NOT NULL DEFAULT 0,
     total_paid BIGINT NOT NULL DEFAULT 0,
     peer_id TEXT NOT NULL DEFAULT '',
+    pending_htlc_amount BIGINT NOT NULL DEFAULT 0,
+    close_initiated_at BIGINT NOT NULL DEFAULT 0,
+    close_expiration BIGINT NOT NULL DEFAULT 0,
+    closing_nonce BIGINT NOT NULL DEFAULT 0,
+    closing_amount BIGINT NOT NULL DEFAULT 0,
     created_at BIGINT NOT NULL,
     updated_at BIGINT NOT NULL
 );
@@ -60,11 +65,20 @@ class ChannelStore:
             query="""
                 INSERT INTO payment_channels
                     (channel_id, sender, receiver, total_deposit, state,
-                     nonce, total_paid, peer_id, created_at, updated_at)
+                     nonce, total_paid, peer_id, pending_htlc_amount,
+                     close_initiated_at, close_expiration, closing_nonce,
+                     closing_amount, created_at, updated_at)
                 VALUES (:channel_id, :sender, :receiver, :total_deposit, :state,
-                        :nonce, :total_paid, :peer_id, :created_at, :updated_at)
+                        :nonce, :total_paid, :peer_id, :pending_htlc_amount,
+                        :close_initiated_at, :close_expiration, :closing_nonce,
+                        :closing_amount, :created_at, :updated_at)
                 ON CONFLICT (channel_id) DO UPDATE SET
                     state = :state, nonce = :nonce, total_paid = :total_paid,
+                    pending_htlc_amount = :pending_htlc_amount,
+                    close_initiated_at = :close_initiated_at,
+                    close_expiration = :close_expiration,
+                    closing_nonce = :closing_nonce,
+                    closing_amount = :closing_amount,
                     updated_at = :updated_at
             """,
             values={
@@ -76,6 +90,11 @@ class ChannelStore:
                 "nonce": channel.nonce,
                 "total_paid": channel.total_paid,
                 "peer_id": channel.peer_id,
+                "pending_htlc_amount": channel.pending_htlc_amount,
+                "close_initiated_at": channel.close_initiated_at,
+                "close_expiration": channel.close_expiration,
+                "closing_nonce": channel.closing_nonce,
+                "closing_amount": channel.closing_amount,
                 "created_at": channel.created_at,
                 "updated_at": channel.updated_at,
             },

@@ -155,7 +155,7 @@ def _find_route_weighted(
             edge_cost = 1.0 - trust  # lower cost = higher trust
             new_cost = cost + edge_cost
 
-            if neighbor in best_cost and best_cost[neighbor] <= new_cost:
+            if neighbor in best_cost and best_cost[neighbor] < new_cost:
                 continue
 
             best_cost[neighbor] = new_cost

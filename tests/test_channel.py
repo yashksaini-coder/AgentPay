@@ -45,15 +45,24 @@ class TestChannelStateMachine:
         with pytest.raises(ChannelError):
             channel.request_close()
 
-    def test_dispute_from_active(self, channel):
+    def test_dispute_from_active_rejected(self, channel):
+        """Dispute requires CLOSING state — cannot dispute directly from ACTIVE."""
         channel.accept()
         channel.activate()
+        with pytest.raises(ChannelError):
+            channel.dispute()
+
+    def test_dispute_from_closing(self, channel):
+        channel.accept()
+        channel.activate()
+        channel.request_close()
         channel.dispute()
         assert channel.state == ChannelState.DISPUTED
 
     def test_settle_after_dispute(self, channel):
         channel.accept()
         channel.activate()
+        channel.request_close()
         channel.dispute()
         # Expire challenge period for test
         channel.close_expiration = 0

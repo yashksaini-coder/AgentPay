@@ -8,6 +8,7 @@ Each HTLC locks funds in a payment channel until either:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import time
 from dataclasses import dataclass, field
@@ -75,7 +76,7 @@ def generate_preimage() -> tuple[bytes, bytes]:
 
 def verify_preimage(preimage: bytes, payment_hash: bytes) -> bool:
     """Verify that a preimage matches a payment hash."""
-    return hashlib.sha256(preimage).digest() == payment_hash
+    return hmac.compare_digest(hashlib.sha256(preimage).digest(), payment_hash)
 
 
 class HtlcManager:
@@ -182,7 +183,7 @@ class HtlcManager:
         to_remove = [
             hid
             for hid, h in self._htlcs.items()
-            if h.state in (HtlcState.FULFILLED, HtlcState.CANCELLED)
+            if h.state in (HtlcState.FULFILLED, HtlcState.CANCELLED, HtlcState.EXPIRED)
         ]
         for hid in to_remove:
             htlc = self._htlcs.pop(hid)

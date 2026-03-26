@@ -283,24 +283,28 @@ class TestInvalidStateTransitions:
     # From DISPUTED ---
     def test_disputed_cannot_accept(self):
         ch = _active_ch()
+        ch.request_close()
         ch.dispute()
         with pytest.raises(ChannelError):
             ch.accept()
 
     def test_disputed_cannot_activate(self):
         ch = _active_ch()
+        ch.request_close()
         ch.dispute()
         with pytest.raises(ChannelError):
             ch.activate()
 
     def test_disputed_cannot_close(self):
         ch = _active_ch()
+        ch.request_close()
         ch.dispute()
         with pytest.raises(ChannelError):
             ch.request_close()
 
     def test_disputed_cannot_dispute_again(self):
         ch = _active_ch()
+        ch.request_close()
         ch.dispute()
         with pytest.raises(ChannelError):
             ch.dispute()
@@ -344,6 +348,7 @@ class TestVoucherEdgeCases:
 
     def test_voucher_in_disputed_state(self, eth_keypair, channel_id):
         ch = _active_ch(channel_id=channel_id)
+        ch.request_close()
         ch.dispute()
         v = SignedVoucher.create(channel_id, 1, 100, eth_keypair.key.hex())
         with pytest.raises(ChannelError, match="Cannot apply voucher in state DISPUTED"):

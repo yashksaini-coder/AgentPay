@@ -3,9 +3,12 @@
 #  AgentPay — One-command development startup
 #
 #  Starts N agent nodes + Next.js frontend.
+#  Waits for each agent's /health before proceeding,
+#  then connects agents bidirectionally to avoid peer
+#  expiry race conditions.
 #
 #  Usage:
-#    ./scripts/dev.sh                # 5 agents (default)
+#    ./scripts/dev.sh                # 2 agents (default)
 #    ./scripts/dev.sh --agents 3     # 3 agents
 #    ./scripts/dev.sh --no-agents    # frontend only
 #
@@ -23,8 +26,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # ── Parse arguments ──────────────────────────────────────
-NUM_AGENTS=5
+NUM_AGENTS=2
 NO_AGENTS=false
+AGENT_ENABLED=false
+AGENT_TICK=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,9 +45,17 @@ while [[ $# -gt 0 ]]; do
       NUM_AGENTS="${1#*=}"
       shift
       ;;
+    --agent-enabled)
+      AGENT_ENABLED=true
+      shift
+      ;;
+    --agent-tick)
+      AGENT_TICK="${2:?--agent-tick requires a number}"
+      shift 2
+      ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--agents N] [--no-agents]" >&2
+      echo "Usage: $0 [--agents N] [--no-agents] [--agent-enabled] [--agent-tick SECS]" >&2
       exit 1
       ;;
   esac
@@ -78,6 +91,22 @@ agent_label() {
   printf "\\x$(printf '%02x' $((65 + $1)))"
 }
 
+# ── Health-check helper ──────────────────────────────────
+wait_for_health() {
+  local port=$1 label=$2 max_wait=30
+  local elapsed=0
+  while (( elapsed < max_wait )); do
+    if curl -sf "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
+      echo "  ${GREEN}[${label}]${NC} Ready on port ${port}"
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  echo "  ${RED}[${label}]${NC} Failed to start on port ${port}" >&2
+  return 1
+}
+
 # ── Process tracking ─────────────────────────────────────
 CHILD_PIDS=()
 SHUTTING_DOWN=false
@@ -108,7 +137,7 @@ cleanup() {
     if kill -0 "$pid" 2>/dev/null; then
       local waited=0
       while kill -0 "$pid" 2>/dev/null && (( waited < timeout )); do
-        sleep 0.5
+        sleep 1
         waited=$((waited + 1))
       done
       if kill -0 "$pid" 2>/dev/null; then
@@ -192,6 +221,15 @@ if [[ "$NO_AGENTS" == false ]]; then
       identity_args="--identity-path ~/.agentic-payments/identity$((i + 1)).key"
     fi
 
+    # Agent runtime flags
+    agent_args=""
+    if [[ "$AGENT_ENABLED" == true ]]; then
+      agent_args="--agent-enabled"
+      if [[ -n "$AGENT_TICK" ]]; then
+        agent_args="$agent_args --agent-tick $AGENT_TICK"
+      fi
+    fi
+
     echo "  ${color}[agent-${label,,}]${NC} Starting on ports ${p2p_port}/${ws_port}/${api_port}..."
 
     # shellcheck disable=SC2086
@@ -199,25 +237,72 @@ if [[ "$NO_AGENTS" == false ]]; then
       --port "$p2p_port" --ws-port "$ws_port" --api-port "$api_port" \
       --log-level INFO \
       $identity_args \
+      $agent_args \
       2>&1 | filter_agent_log "$tag" &
     PIPE_PID=$!
     CHILD_PIDS+=("$PIPE_PID")
 
-    sleep 0.5
-
     # Track the actual agentpay process too
+    sleep 0.5
     AGENT_PID=$(pgrep -f "agentpay start --port $p2p_port" 2>/dev/null | head -1 || true)
     if [[ -n "$AGENT_PID" ]]; then
       CHILD_PIDS+=("$AGENT_PID")
     fi
+  done
 
-    # Small delay between agents so identity files don't collide
-    if (( i < NUM_AGENTS - 1 )); then
-      sleep 1
+  # ── Wait for all agents to be healthy ──────────────────
+  echo ""
+  echo "${BLUE}[setup]${NC} Waiting for agents to become healthy..."
+  ALL_HEALTHY=true
+  for (( i=0; i<NUM_AGENTS; i++ )); do
+    label=$(agent_label "$i")
+    api_port=$((8080 + i))
+    if ! wait_for_health "$api_port" "$label"; then
+      ALL_HEALTHY=false
     fi
   done
 
-  sleep 1
+  if [[ "$ALL_HEALTHY" == false ]]; then
+    echo "${RED}  Some agents failed to start. Check logs above.${NC}"
+  fi
+
+  # ── Connect agents bidirectionally ─────────────────────
+  if [[ "$ALL_HEALTHY" == true ]] && (( NUM_AGENTS > 1 )); then
+    echo ""
+    echo "${BLUE}[setup]${NC} Connecting agents bidirectionally..."
+
+    for (( i=0; i<NUM_AGENTS; i++ )); do
+      for (( j=i+1; j<NUM_AGENTS; j++ )); do
+        label_i=$(agent_label "$i")
+        label_j=$(agent_label "$j")
+        api_i=$((8080 + i))
+        api_j=$((8080 + j))
+
+        # Get agent j's multiaddr, connect i→j
+        ADDR_J=$(curl -sf "http://127.0.0.1:${api_j}/identity" 2>/dev/null | \
+          python3 -c "import sys,json; a=json.load(sys.stdin).get('addrs',[]); print(a[0].replace('0.0.0.0','127.0.0.1') if a else '')" 2>/dev/null || echo "")
+        if [[ -n "$ADDR_J" ]]; then
+          BODY_J=$(python3 -c "import json,sys; print(json.dumps({'multiaddr':sys.argv[1]}))" "$ADDR_J")
+          curl -sf -X POST "http://127.0.0.1:${api_i}/connect" \
+            -H "Content-Type: application/json" \
+            -d "$BODY_J" >/dev/null 2>&1 || true
+          echo "  ${GREEN}${label_i} → ${label_j}${NC} connected"
+        fi
+
+        # Get agent i's multiaddr, connect j→i
+        ADDR_I=$(curl -sf "http://127.0.0.1:${api_i}/identity" 2>/dev/null | \
+          python3 -c "import sys,json; a=json.load(sys.stdin).get('addrs',[]); print(a[0].replace('0.0.0.0','127.0.0.1') if a else '')" 2>/dev/null || echo "")
+        if [[ -n "$ADDR_I" ]]; then
+          BODY_I=$(python3 -c "import json,sys; print(json.dumps({'multiaddr':sys.argv[1]}))" "$ADDR_I")
+          curl -sf -X POST "http://127.0.0.1:${api_j}/connect" \
+            -H "Content-Type: application/json" \
+            -d "$BODY_I" >/dev/null 2>&1 || true
+          echo "  ${GREEN}${label_j} → ${label_i}${NC} connected"
+        fi
+      done
+    done
+  fi
+
   echo ""
 fi
 

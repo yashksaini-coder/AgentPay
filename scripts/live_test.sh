@@ -311,8 +311,58 @@ else
   pass "Gateway access endpoint responds"
 fi
 
-# ── Phase 13: IPFS Storage ────────────────────────────
-phase 13 "IPFS Storage"
+# ── Phase 13: Agent Runtime ──────────────────────────
+phase 13 "Agent Runtime"
+
+AGENT_STATUS=$(api "$API_A/agent/status" || echo '{"enabled":false}')
+AGENT_ENABLED=$(echo "$AGENT_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('enabled', False))" 2>/dev/null || echo "False")
+
+if [[ "$AGENT_ENABLED" == "True" ]]; then
+  pass "Agent runtime enabled"
+
+  # Create a task
+  TASK_RESULT=$(api_post "$API_A/agent/tasks" -d '{"description":"test task","amount":1000}')
+  if echo "$TASK_RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('task',{}).get('task_id') or d.get('task_id')" 2>/dev/null; then
+    TASK_ID=$(echo "$TASK_RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('task_id','') or d.get('task_id',''))")
+    pass "Task created: ${DIM}${TASK_ID:0:16}...${NC}"
+  else
+    fail "Create task" "${TASK_RESULT:0:80}"
+    TASK_ID=""
+  fi
+
+  # List tasks
+  TASKS=$(api "$API_A/agent/tasks")
+  if echo "$TASKS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert isinstance(d.get('tasks',[]), list)" 2>/dev/null; then
+    pass "Task list retrieved"
+  else
+    fail "Task list" "Failed"
+  fi
+
+  # Get task details
+  if [ -n "${TASK_ID:-}" ]; then
+    TASK_DETAIL=$(api "$API_A/agent/tasks/$TASK_ID")
+    if echo "$TASK_DETAIL" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+      pass "Task detail retrieved"
+    else
+      fail "Task detail" "Failed"
+    fi
+  fi
+
+  # Execute task
+  if [ -n "${TASK_ID:-}" ]; then
+    EXEC_RESULT=$(api_post "$API_A/agent/execute" -d "{\"task_id\":\"$TASK_ID\"}")
+    if echo "$EXEC_RESULT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+      pass "Task executed"
+    else
+      fail "Task execution" "Failed"
+    fi
+  fi
+else
+  skip "Agent runtime (not enabled — start with --agent-enabled)"
+fi
+
+# ── Phase 14: IPFS Storage ────────────────────────────
+phase 14 "IPFS Storage"
 
 STORAGE=$(api "$API_A/storage/status" || echo '{"enabled":false}')
 if echo "$STORAGE" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('enabled')" 2>/dev/null; then
@@ -321,8 +371,8 @@ else
   skip "IPFS storage (not configured — start with --ipfs-url to enable)"
 fi
 
-# ── Phase 14: ERC-8004 Identity ───────────────────────
-phase 14 "ERC-8004 Identity"
+# ── Phase 15: ERC-8004 Identity ───────────────────────
+phase 15 "ERC-8004 Identity"
 
 ERC_STATUS=$(api "$API_A/identity/erc8004" || echo '{"enabled":false}')
 if echo "$ERC_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('enabled')" 2>/dev/null; then
@@ -348,8 +398,8 @@ else
   skip "ERC-8004 identity (not configured — start with --erc8004-identity to enable)"
 fi
 
-# ── Phase 15: Close Channel ───────────────────────────
-phase 15 "Channel Close"
+# ── Phase 16: Close Channel ───────────────────────────
+phase 16 "Channel Close"
 
 if [ -n "${CHANNEL_ID:-}" ]; then
   CLOSE=$(api_post "$API_A/channels/$CHANNEL_ID/close" || echo '{}')
@@ -360,8 +410,8 @@ if [ -n "${CHANNEL_ID:-}" ]; then
   fi
 fi
 
-# ── Phase 16: Chain Info ──────────────────────────────
-phase 16 "Chain Info"
+# ── Phase 17: Chain Info ──────────────────────────────
+phase 17 "Chain Info"
 
 CHAIN=$(api "$API_A/chain")
 if echo "$CHAIN" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('chain_type')" 2>/dev/null; then

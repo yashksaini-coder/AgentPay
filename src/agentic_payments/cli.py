@@ -222,6 +222,8 @@ def start(
     identity_path: Path = typer.Option(
         Path("~/.agentic-payments/identity.key"), help="Identity key file"
     ),
+    agent_enabled: bool = typer.Option(False, help="Enable autonomous agent runtime"),
+    agent_tick: float | None = typer.Option(None, help="Agent runtime tick interval (seconds)"),
 ) -> None:
     """Start an agent node."""
     _setup_logging(level=log_level)
@@ -255,6 +257,9 @@ def start(
         settings.erc8004.enabled = True
     if erc8004_reputation:
         settings.erc8004.reputation_registry_address = erc8004_reputation
+    settings.agent.enabled = agent_enabled
+    if agent_tick is not None:
+        settings.agent.tick_interval = agent_tick
 
     async def run() -> None:
         async with trio.open_nursery() as nursery:
@@ -362,12 +367,14 @@ def peer_connect(
 ) -> None:
     """Connect to a peer by multiaddr."""
     typer.echo(f"Connecting to {multiaddr}...")
-    typer.echo("(Direct CLI connect requires a running node — use the API)")
+    data = _api_or_exit(api_url, "/connect", method="POST", data={"multiaddr": multiaddr})
+    typer.echo(f"Connected: {data.get('peer_id', 'ok')}")
 
 
 @channel_app.command("open")
 def channel_open(
     peer: str = typer.Option(..., help="Peer ID"),
+    receiver: str = typer.Option(..., help="Receiver Ethereum address"),
     deposit: int = typer.Option(..., help="Deposit amount in wei"),
     api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
 ) -> None:
@@ -375,7 +382,7 @@ def channel_open(
     import json
     import urllib.request
 
-    payload = json.dumps({"peer_id": peer, "receiver": "", "deposit": deposit}).encode()
+    payload = json.dumps({"peer_id": peer, "receiver": receiver, "deposit": deposit}).encode()
     req = urllib.request.Request(
         f"{api_url}/channels",
         data=payload,
@@ -398,7 +405,8 @@ def channel_close(
 ) -> None:
     """Close a payment channel."""
     typer.echo(f"Closing channel {channel}...")
-    typer.echo("(Use the REST API for channel close)")
+    data = _api_or_exit(api_url, f"/channels/{channel}/close", method="POST")
+    typer.echo(f"Channel closed: {data.get('channel', {}).get('state', 'ok')}")
 
 
 @app.command()
@@ -843,7 +851,7 @@ def discovery_resources(
 ) -> None:
     """List resources in Bazaar-compatible format."""
     data = _api_or_exit(api_url, "/discovery/resources")
-    resources = data.get("resources", [])
+    resources = data.get("providers", [])
     if not resources:
         typer.echo("No resources available.")
         return
@@ -1004,7 +1012,7 @@ def reputation_sync_onchain(
     import json
 
     result = _api_or_exit(
-        api_url, "/reputation/sync-onchain", method="POST", json={"peer_id": peer_id}
+        api_url, "/reputation/sync-onchain", method="POST", data={"peer_id": peer_id}
     )
     typer.echo(json.dumps(result, indent=2))
 
@@ -1123,14 +1131,12 @@ def gateway_register(
 
 @pricing_app.command("quote")
 def pricing_quote(
-    service: str = typer.Option(..., help="Service type"),
-    peer: str = typer.Option("", help="Peer ID (for trust-adjusted pricing)"),
+    base_price: int = typer.Option(..., help="Base price in wei"),
+    peer: str = typer.Option(..., help="Peer ID (for trust-adjusted pricing)"),
     api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
 ) -> None:
     """Get a dynamic price quote for a service."""
-    payload: dict = {"service_type": service}
-    if peer:
-        payload["peer_id"] = peer
+    payload: dict = {"base_price": base_price, "peer_id": peer}
     data = _api_or_exit(api_url, "/pricing/quote", method="POST", data=payload)
     quote = data.get("quote", data)
     typer.echo(f"  Base price:     {quote.get('base_price', '?')} wei")
@@ -1172,7 +1178,7 @@ def dispute_list(
     api_url: str = typer.Option("http://127.0.0.1:8080", help="API URL"),
 ) -> None:
     """List disputes."""
-    path = "/disputes?pending_only=true" if pending else "/disputes"
+    path = "/disputes?pending=true" if pending else "/disputes"
     data = _api_or_exit(api_url, path)
     disputes = data.get("disputes", [])
     if not disputes:
@@ -1280,7 +1286,7 @@ def storage_pin(
     if channel:
         result = _api_or_exit(api_url, f"/storage/receipts/{channel}/pin", method="POST")
     elif data:
-        result = _api_or_exit(api_url, "/storage/pin", method="POST", json={"data": data})
+        result = _api_or_exit(api_url, "/storage/pin", method="POST", data={"data": data})
     else:
         typer.echo("Provide --channel or --data", err=True)
         raise typer.Exit(1)

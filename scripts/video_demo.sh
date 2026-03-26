@@ -179,7 +179,30 @@ echo "  ${R}402${NC} $(echo "$RESP_402" | jq_ "a=d.get('accepts',[{}])[0]; print
 pause 2
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-banner "7. ERC-8004 On-Chain Identity"
+banner "7. Agent Runtime (Autonomous Tasks)"
+narrate "Agents autonomously negotiate, execute tasks, and settle payments"
+
+AGENT_RT=$(api "$API_A/agent/status" 2>/dev/null || echo '{"enabled":false}')
+if echo "$AGENT_RT" | jq_ "assert d.get('enabled')" 2>/dev/null; then
+  TASK=$(api -X POST "$API_A/agent/tasks" -H "Content-Type: application/json" \
+    -d '{"description":"Analyze market data","amount":5000}' 2>/dev/null || echo '{}')
+  TID=$(echo "$TASK" | jq_ "print(d.get('task',{}).get('task_id','') or d.get('task_id',''))" 2>/dev/null)
+  if [[ -n "$TID" ]]; then
+    show "Task submitted: ${DIM}${TID:0:24}...${NC}"
+    EXEC=$(api -X POST "$API_A/agent/execute" -H "Content-Type: application/json" \
+      -d "{\"task_id\":\"$TID\"}" 2>/dev/null || echo '{}')
+    EXEC_S=$(echo "$EXEC" | jq_ "print(d.get('status','done'))" 2>/dev/null)
+    show "Task executed: ${EXEC_S}"
+  else
+    narrate "(Task creation unavailable)"
+  fi
+else
+  narrate "(Agent runtime not enabled — start with --agent-enabled to demo)"
+fi
+pause 2
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+banner "8. ERC-8004 On-Chain Identity"
 narrate "Register agent on-chain — portable identity across chains"
 
 ERC_STATUS=$(api "$API_A/identity/erc8004" 2>/dev/null)
@@ -196,7 +219,7 @@ fi
 pause 2
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-banner "8. IPFS Storage"
+banner "9. IPFS Storage"
 narrate "Pin receipts to IPFS — content-addressed, tamper-evident"
 
 STORAGE=$(api "$API_A/storage/status" 2>/dev/null || echo '{"enabled":false}')
@@ -214,7 +237,7 @@ fi
 pause 2
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-banner "9. Close Channel"
+banner "10. Close Channel"
 narrate "Cooperative close — final voucher ready for on-chain settlement"
 
 if [ -n "${CHANNEL:-}" ]; then
@@ -232,11 +255,12 @@ echo "    ${G}✓${NC} Payment channels (Filecoin-style cumulative vouchers)"
 echo "    ${G}✓${NC} 5 off-chain micropayments (sub-millisecond)"
 echo "    ${G}✓${NC} Trust scoring + dynamic pricing"
 echo "    ${G}✓${NC} x402 payment gateway (spec-compliant)"
+echo "    ${G}✓${NC} Agent Runtime — autonomous task execution"
 echo "    ${G}✓${NC} ERC-8004 on-chain agent identity"
 echo "    ${G}✓${NC} IPFS content-addressed storage"
 echo "    ${G}✓${NC} Cooperative channel settlement"
 echo ""
 echo "  ${BOLD}Stack:${NC} Python 3.12 + libp2p + Ethereum/Algorand/Filecoin"
-echo "  ${BOLD}Tests:${NC} 590 unit + 35 live E2E"
+echo "  ${BOLD}Tests:${NC} 678 unit tests + live E2E"
 echo "  ${BOLD}Repo:${NC}  github.com/yashksaini-coder/AgentPay"
 echo ""

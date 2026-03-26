@@ -23,11 +23,15 @@ def create_app(node: Any) -> QuartTrio:
     register_routes(app)
 
     # CORS: restrict to known frontend origins to prevent CSRF
+    import os
+
+    extra_origins = os.environ.get("CORS_ORIGINS", "").split(",")
     allowed_origins = {
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        *(o.strip() for o in extra_origins if o.strip()),
     }
 
     @app.after_request

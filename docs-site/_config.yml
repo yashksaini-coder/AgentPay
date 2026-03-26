@@ -1,0 +1,31 @@
+title: AgentPay
+description: Decentralized micropayment channels for autonomous AI agents
+url: "https://yashksaini-coder.github.io"
+baseurl: "/AgentPay"
+theme: just-the-docs
+
+aux_links:
+  "Live Dashboard": "https://app.agentpay.io"
+  "GitHub": "https://github.com/yashksaini-coder/AgentPay"
+
+nav_external_links:
+  - title: Dashboard
+    url: https://app.agentpay.io
+
+color_scheme: dark
+search_enabled: true
+
+heading_anchors: true
+
+footer_content: "Built by <a href=\"https://github.com/yashksaini-coder\">Yash K. Saini</a>. MIT License."
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-feed
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - .bundle

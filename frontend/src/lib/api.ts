@@ -1,4 +1,4 @@
-const DEFAULT_API = "http://127.0.0.1:8080";
+const DEFAULT_API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
 
 async function fetchApi<T>(base: string, path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${base}${path}`, {

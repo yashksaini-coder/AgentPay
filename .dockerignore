@@ -1,0 +1,12 @@
+.git
+node_modules
+__pycache__
+.venv
+tests/
+docs-site/
+blog/
+frontend/
+*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache

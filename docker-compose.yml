@@ -1,15 +1,22 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: agentic_payments
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: agent
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agentic_payments"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
+    restart: unless-stopped
     entrypoint: ["anvil", "--host", "0.0.0.0"]
     ports: ["8545:8545"]
 
@@ -17,20 +24,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
       - API_HOST=0.0.0.0
-      - CORS_ORIGINS=http://localhost,http://app.agentpay.io
+      - DATABASE_URL=postgresql://agent:agent@postgres:5432/agentic_payments
+      - RPC_URL=http://anvil:8545
+      - CORS_ORIGINS=http://localhost,http://134.209.156.177,http://agentpay.yashksaini.systems,https://agentpay.yashksaini.systems
     ports:
       - "8080:8080"
       - "9000:9000"
     depends_on:
-      - postgres
-      - anvil
+      postgres:
+        condition: service_healthy
+      anvil:
+        condition: service_started
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=/api
     ports:
@@ -40,6 +53,7 @@ services:
 
   nginx:
     image: nginx:alpine
+    restart: unless-stopped
     ports:
       - "80:80"
     volumes:

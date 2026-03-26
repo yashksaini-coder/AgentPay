@@ -46,8 +46,9 @@ contracts/lib/
 # Excalidraw source files (PNG exports in docs/images/ are the committed assets)
 diagrams/
 
-# Internal docs (kept local, not tracked)
+# Internal docs and blog drafts (kept local, not tracked)
 docs/PITCH.md
+blog/
 
 # Data
 *.db

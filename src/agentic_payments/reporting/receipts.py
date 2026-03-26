@@ -98,11 +98,17 @@ class SignedReceipt:
     @staticmethod
     def from_dict(data: dict) -> SignedReceipt:
         """Deserialize a receipt from a dictionary (e.g. from pubsub)."""
+        amount = data["amount"]
+        nonce = data["nonce"]
+        if amount < 0:
+            raise ValueError(f"Receipt amount must not be negative, got {amount}")
+        if nonce < 0:
+            raise ValueError(f"Receipt nonce must not be negative, got {nonce}")
         return SignedReceipt(
             receipt_id=bytes.fromhex(data["receipt_id"]),
             channel_id=bytes.fromhex(data["channel_id"]),
-            nonce=data["nonce"],
-            amount=data["amount"],
+            nonce=nonce,
+            amount=amount,
             timestamp=data["timestamp"],
             sender=data["sender"],
             receiver=data["receiver"],

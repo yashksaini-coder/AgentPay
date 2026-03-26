@@ -46,10 +46,10 @@ class PeerReputation:
 
     @property
     def success_rate(self) -> float:
-        total = self.payments_sent + self.payments_received + self.payments_failed
+        total = self.payments_sent + self.payments_failed
         if total == 0:
             return 0.5  # neutral default
-        return (self.payments_sent + self.payments_received) / total
+        return self.payments_sent / total
 
     @property
     def avg_response_time(self) -> float:

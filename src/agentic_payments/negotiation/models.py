@@ -92,14 +92,14 @@ class Negotiation:
     channel_deposit: int
     timeout: float  # absolute unix timestamp for expiry
     state: NegotiationState = NegotiationState.PROPOSED
-    current_price: int = 0
+    current_price: int | None = None
     channel_id: str | None = None
     history: list[NegotiationEvent] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     sla_terms: SLATerms | None = None
 
     def __post_init__(self) -> None:
-        if self.current_price == 0:
+        if self.current_price is None:
             self.current_price = self.proposed_price
 
     @property

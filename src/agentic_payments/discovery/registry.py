@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import time
 
 import structlog
@@ -23,7 +24,7 @@ class CapabilityRegistry:
 
     def register(self, ad: AgentAdvertisement) -> None:
         """Register or update an agent advertisement."""
-        ad.last_seen = time.time()
+        ad = dataclasses.replace(ad, last_seen=time.time())
         self._agents[ad.peer_id] = ad
         logger.debug("agent_registered", peer_id=ad.peer_id, caps=len(ad.capabilities))
 

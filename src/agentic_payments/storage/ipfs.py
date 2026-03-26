@@ -8,6 +8,7 @@ the event loop.
 from __future__ import annotations
 
 import json
+import urllib.parse
 import urllib.request
 import urllib.error
 from typing import Any
@@ -39,7 +40,7 @@ class IPFSClient:
         """Synchronous POST to IPFS API (runs in thread)."""
         url = f"{self.api_url}/api/v0/{endpoint}"
         if params:
-            query = "&".join(f"{k}={v}" for k, v in params.items())
+            query = urllib.parse.urlencode(params)
             url = f"{url}?{query}"
 
         req = urllib.request.Request(url, method="POST")
@@ -58,6 +59,8 @@ class IPFSClient:
                 return json.loads(resp.read())
         except urllib.error.URLError as e:
             raise IPFSError(f"IPFS API error: {e}") from e
+        except (json.JSONDecodeError, KeyError) as e:
+            raise IPFSError(f"IPFS API response parse error: {e}") from e
 
     async def add(self, data: bytes, name: str = "") -> StorageResult:
         """Pin data to IPFS, return CID and size."""

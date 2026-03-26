@@ -99,6 +99,8 @@ class DisputeMonitor:
     ) -> Dispute:
         """Manually file a dispute for a channel."""
         ch = self.channel_manager.get_channel(channel_id)
+        if ch is None:
+            raise KeyError(f"Channel not found: {channel_id.hex()}")
         slash = int(ch.total_deposit * self.slash_percentage)
 
         dispute = Dispute(

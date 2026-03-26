@@ -81,6 +81,8 @@ class PubsubBroadcaster:
         ISubscriptionAPI's async iterator, decodes msgpack, and
         dispatches to registered handlers.
         """
+        if not self._subscriptions:
+            logger.warning("pubsub_run_no_subscriptions")
         for topic, sub in self._subscriptions.items():
             nursery.start_soon(self._listen, topic, sub)
 

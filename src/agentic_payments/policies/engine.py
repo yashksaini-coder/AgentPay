@@ -112,6 +112,10 @@ class PolicyEngine:
         self._total_spent += amount
         self._payment_timestamps.append(time.time())
 
+    def record_channel_open(self, amount: int) -> None:
+        """Record a channel deposit for total spend tracking."""
+        self.record_payment(amount)
+
     def get_stats(self) -> dict:
         """Return current spending statistics."""
         now = time.time()

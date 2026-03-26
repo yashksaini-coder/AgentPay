@@ -75,9 +75,17 @@ def test_cannot_counter_after_accept():
 
 def test_expiry():
     mgr = make_manager()
-    neg = mgr.propose("QmA", "QmB", "llm", 1000, 50000, timeout=time.time() - 10)
+    neg = mgr.propose("QmA", "QmB", "llm", 1000, 50000)
+    # Manually backdate timeout to simulate expiry
+    neg.timeout = time.time() - 10
     retrieved = mgr.get(neg.negotiation_id)
     assert retrieved.state == NegotiationState.EXPIRED
+
+
+def test_propose_rejects_past_timeout():
+    mgr = make_manager()
+    with pytest.raises(ValueError, match="future"):
+        mgr.propose("QmA", "QmB", "llm", 1000, 50000, timeout=time.time() - 10)
 
 
 def test_list_active():

@@ -39,6 +39,10 @@ class NegotiationManager:
         nid = os.urandom(16).hex()
         if timeout is None:
             timeout = time.time() + DEFAULT_TIMEOUT
+        elif timeout <= time.time():
+            raise ValueError(
+                f"Timeout must be an absolute timestamp in the future, got {timeout}"
+            )
 
         neg = Negotiation(
             negotiation_id=nid,

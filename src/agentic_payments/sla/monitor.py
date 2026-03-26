@@ -112,6 +112,7 @@ class SLAMonitor:
             state.latencies.clear()
             state.errors = 0
             state.successes = 0
+            state.violations.clear()
             state.window_start = now
 
         state.latencies.append(latency_ms)

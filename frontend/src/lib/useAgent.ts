@@ -25,8 +25,26 @@ interface WsSnapshot {
   channels: { channels: Channel[]; count: number };
 }
 
+function resolveBaseUrl(port: number): string {
+  const env = process.env.NEXT_PUBLIC_API_URL;
+  // In production (env set to "/api"), route through nginx proxy
+  if (env && !env.includes("127.0.0.1") && !env.includes("localhost")) return env;
+  // Local dev: connect directly to the agent's port
+  return `http://127.0.0.1:${port}`;
+}
+
+function resolveWsUrl(port: number): string {
+  if (typeof window === "undefined") return "";
+  const env = process.env.NEXT_PUBLIC_API_URL;
+  if (env && !env.includes("127.0.0.1") && !env.includes("localhost")) {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}/api/ws`;
+  }
+  return `ws://127.0.0.1:${port}/ws`;
+}
+
 export function useAgent(port: number): AgentState {
-  const [api] = useState(() => createApi(`http://127.0.0.1:${port}`));
+  const [api] = useState(() => createApi(resolveBaseUrl(port)));
   const [online, setOnline] = useState(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
@@ -49,7 +67,7 @@ export function useAgent(port: number): AgentState {
 
     function connect() {
       if (cancelled) return;
-      ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      ws = new WebSocket(resolveWsUrl(port));
 
       ws.onopen = () => {
         console.log(`[WS:${port}] connected`);

@@ -1,85 +1,52 @@
-x-backend: &backend-base
-  build:
-    context: .
-    dockerfile: Dockerfile
-  restart: unless-stopped
-  environment: &backend-env
-    API_HOST: "0.0.0.0"
-    DATABASE_URL: "postgresql://agent:agent@postgres:5432/agentic_payments"
-    CORS_ORIGINS: "http://localhost,http://134.209.156.177,http://agentpay.yashksaini.systems,https://agentpay.yashksaini.systems"
-  depends_on:
-    postgres: { condition: service_healthy }
-    anvil: { condition: service_started }
-
 services:
   postgres:
     image: postgres:16-alpine
-    restart: unless-stopped
     environment:
       POSTGRES_DB: agentic_payments
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: agent
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agent -d agentic_payments"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
-    restart: unless-stopped
     entrypoint: ["anvil", "--host", "0.0.0.0"]
     ports: ["8545:8545"]
 
-  backend-a:
-    <<: *backend-base
-    command: ["uv", "run", "agentpay", "start", "--port", "9000", "--ws-port", "9001", "--api-port", "8080", "--eth-rpc", "http://anvil:8545"]
-
-  backend-b:
-    <<: *backend-base
-    command: ["uv", "run", "agentpay", "start", "--port", "9000", "--ws-port", "9001", "--api-port", "8080", "--eth-rpc", "http://anvil:8545"]
-
-  backend-c:
-    <<: *backend-base
-    command: ["uv", "run", "agentpay", "start", "--port", "9000", "--ws-port", "9001", "--api-port", "8080", "--eth-rpc", "http://anvil:8545"]
-
-  backend-d:
-    <<: *backend-base
-    command: ["uv", "run", "agentpay", "start", "--port", "9000", "--ws-port", "9001", "--api-port", "8080", "--eth-rpc", "http://anvil:8545"]
-
-  backend-e:
-    <<: *backend-base
-    command: ["uv", "run", "agentpay", "start", "--port", "9000", "--ws-port", "9001", "--api-port", "8080", "--eth-rpc", "http://anvil:8545"]
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - API_HOST=0.0.0.0
+      - CORS_ORIGINS=http://localhost,http://app.agentpay.io
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    depends_on:
+      - postgres
+      - anvil
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=/api
-      - AGENT_HOSTS=backend-a,backend-b,backend-c,backend-d,backend-e
     ports:
       - "3000:3000"
     depends_on:
-      - backend-a
+      - backend
 
   nginx:
     image: nginx:alpine
-    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - frontend
-      - backend-a
-      - backend-b
-      - backend-c
-      - backend-d
-      - backend-e
+      - backend
 
 volumes:
   pgdata:

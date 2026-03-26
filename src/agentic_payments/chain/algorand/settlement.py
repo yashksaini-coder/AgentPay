@@ -208,9 +208,7 @@ class AlgorandSettlement:
         tx_id = await trio.to_thread.run_sync(
             lambda: self.client.send_transactions([signed_app, signed_pay])
         )
-        pending = await trio.to_thread.run_sync(
-            lambda: _wait_for_confirmation(self.client, tx_id)
-        )
+        pending = await trio.to_thread.run_sync(lambda: _wait_for_confirmation(self.client, tx_id))
 
         # Generate deterministic channel_id from confirmed round
         confirmed_round = pending.get("confirmed-round", 0)
@@ -314,6 +312,7 @@ class AlgorandSettlement:
             # Box value is base64-encoded in the response
             import base64
 
+            assert isinstance(box, dict)
             raw_value = base64.b64decode(box.get("value", ""))
             decoded = _decode_channel_box(raw_value)
             decoded["channel_id"] = channel_id.hex()
@@ -337,8 +336,10 @@ class AlgorandSettlement:
         # Use latest round timestamp as time reference
         try:
             status = self.client.status()
+            assert isinstance(status, dict)
             last_round = status["last-round"]
             block = self.client.block_info(last_round)
+            assert isinstance(block, dict)
             block_ts = block.get("block", {}).get("ts", 0)
             return block_ts < expiration
         except Exception:
@@ -354,8 +355,10 @@ class AlgorandSettlement:
             return False
         try:
             status = self.client.status()
+            assert isinstance(status, dict)
             last_round = status["last-round"]
             block = self.client.block_info(last_round)
+            assert isinstance(block, dict)
             block_ts = block.get("block", {}).get("ts", 0)
             return block_ts >= expiration
         except Exception:

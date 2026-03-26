@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import structlog
 import trio
@@ -55,6 +56,7 @@ def _setup_logging(level: str = "INFO", fmt: str = "console") -> None:
 
     numeric_level = logging.getLevelNamesMapping().get(level.upper(), logging.INFO)
 
+    renderer: Any
     if fmt == "console" and sys.stderr.isatty():
         renderer = _ColorRenderer()
     elif fmt == "console":
@@ -69,7 +71,7 @@ def _setup_logging(level: str = "INFO", fmt: str = "console") -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.dev.set_exc_info,
             structlog.processors.TimeStamper(fmt="%H:%M:%S.%f"),
-            _abbreviate_logger_name,
+            _abbreviate_logger_name,  # type: ignore[list-item]
             renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
@@ -217,7 +219,9 @@ def start(
     fil_contract: str = typer.Option("", help="PaymentChannel contract address on FEVM"),
     ipfs_url: str = typer.Option("", help="IPFS HTTP API URL for content-addressed storage"),
     erc8004_identity: str = typer.Option("", help="ERC-8004 Identity Registry contract address"),
-    erc8004_reputation: str = typer.Option("", help="ERC-8004 Reputation Registry contract address"),
+    erc8004_reputation: str = typer.Option(
+        "", help="ERC-8004 Reputation Registry contract address"
+    ),
     log_level: str = typer.Option("INFO", help="Log level"),
     identity_path: Path = typer.Option(
         Path("~/.agentic-payments/identity.key"), help="Identity key file"

@@ -124,9 +124,7 @@ class ERC8004Client:
         self.identity = _get_identity_contract(w3, identity_addr)
         self.reputation = _get_reputation_contract(w3, reputation_addr)
 
-    async def register_agent(
-        self, wallet: Any, agent_uri: str
-    ) -> tuple[int, str]:
+    async def register_agent(self, wallet: Any, agent_uri: str) -> tuple[int, str]:
         """Register an agent on-chain. Returns (agentId, tx_hash).
 
         Mints an ERC-721 identity token with the given agentURI.

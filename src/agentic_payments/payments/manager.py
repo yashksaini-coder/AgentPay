@@ -84,10 +84,15 @@ class ChannelManager:
     async def handle_open_request(self, msg: PaymentOpen, peer_id: str) -> PaymentChannel:
         """Handle an incoming channel open request from a peer."""
         if msg.channel_id in self.channels:
-            raise PaymentError(PaymentErrorCode.CHANNEL_ALREADY_EXISTS, detail=f"Channel {msg.channel_id.hex()[:16]} already exists")
+            raise PaymentError(
+                PaymentErrorCode.CHANNEL_ALREADY_EXISTS,
+                detail=f"Channel {msg.channel_id.hex()[:16]} already exists",
+            )
 
         if msg.total_deposit <= 0:
-            raise PaymentError(PaymentErrorCode.CHANNEL_DEPOSIT_INVALID, detail="Deposit must be positive")
+            raise PaymentError(
+                PaymentErrorCode.CHANNEL_DEPOSIT_INVALID, detail="Deposit must be positive"
+            )
 
         channel = PaymentChannel(
             channel_id=msg.channel_id,
@@ -114,7 +119,10 @@ class ChannelManager:
         # Validate timestamp is recent to prevent replay of old vouchers
         now = int(time.time())
         if abs(msg.timestamp - now) > MAX_TIMESTAMP_SKEW:
-            raise PaymentError(PaymentErrorCode.EXPIRED_PAYMENT, detail=f"Voucher timestamp too skewed: {msg.timestamp} vs now {now}")
+            raise PaymentError(
+                PaymentErrorCode.EXPIRED_PAYMENT,
+                detail=f"Voucher timestamp too skewed: {msg.timestamp} vs now {now}",
+            )
 
         voucher = SignedVoucher(
             channel_id=msg.channel_id,
@@ -127,7 +135,10 @@ class ChannelManager:
 
         # Verify the voucher signature matches the channel sender
         if not voucher.verify(channel.sender):
-            raise PaymentError(PaymentErrorCode.INVALID_SIGNATURE, detail="Voucher signature does not match channel sender")
+            raise PaymentError(
+                PaymentErrorCode.INVALID_SIGNATURE,
+                detail="Voucher signature does not match channel sender",
+            )
 
         channel.apply_voucher(voucher)
 

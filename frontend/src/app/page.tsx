@@ -85,7 +85,7 @@ export default function NetworkPage() {
 
   // Keep a ref to always-current agents for async simulation code
   const allAgentsRef = useRef(allAgents);
-  allAgentsRef.current = allAgents;
+  allAgentsRef.current = allAgents; // eslint-disable-line react-hooks/refs
   const getAgents = useCallback(() => allAgentsRef.current, []);
 
   const [agentNames, setAgentNames] = useState<Map<number, string>>(new Map());

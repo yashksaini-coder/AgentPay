@@ -176,7 +176,9 @@ class FilecoinConfig(BaseSettings):
         default="https://api.calibration.node.glif.io/rpc/v1",
         description="Filecoin Lotus JSON-RPC URL",
     )
-    chain_id: int = Field(default=314159, ge=1, description="Chain ID (314=Mainnet, 314159=Calibration)")
+    chain_id: int = Field(
+        default=314159, ge=1, description="Chain ID (314=Mainnet, 314159=Calibration)"
+    )
     keystore_path: Path = Field(
         default=Path("~/.agentic-payments/filecoin_keystore"),
         description="Filecoin keystore file path",
@@ -217,9 +219,7 @@ class StorageConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="STORAGE_")
 
-    ipfs_api_url: str = Field(
-        default="http://localhost:5001", description="IPFS HTTP API URL"
-    )
+    ipfs_api_url: str = Field(default="http://localhost:5001", description="IPFS HTTP API URL")
     auto_pin_receipts: bool = Field(
         default=False, description="Automatically pin receipts to IPFS on creation"
     )
@@ -270,18 +270,12 @@ class AgentConfig(BaseSettings):
     tick_interval: float = Field(
         default=5.0, ge=0.1, description="Seconds between agent runtime ticks"
     )
-    auto_negotiate: bool = Field(
-        default=True, description="Enable autonomous negotiation strategy"
-    )
-    max_price: int = Field(
-        default=0, ge=0, description="Max price to auto-accept (0 = no limit)"
-    )
+    auto_negotiate: bool = Field(default=True, description="Enable autonomous negotiation strategy")
+    max_price: int = Field(default=0, ge=0, description="Max price to auto-accept (0 = no limit)")
     min_trust_score: float = Field(
         default=0.0, ge=0.0, le=1.0, description="Minimum trust score to engage"
     )
-    executor_type: str = Field(
-        default="echo", description="Task executor type: echo or callback"
-    )
+    executor_type: str = Field(default="echo", description="Task executor type: echo or callback")
 
 
 class Settings(BaseSettings):

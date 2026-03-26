@@ -110,10 +110,11 @@ class AutonomousNegotiator:
                 self._decisions = self._decisions[-self.MAX_DECISIONS :]
 
             # Check if this task has exceeded max negotiation rounds
-            task_rounds = sum(
-                1 for d in self._decisions if d["task_id"] == task.task_id
-            )
-            if task_rounds > self.MAX_NEGOTIATION_ROUNDS and decision == NegotiationDecision.COUNTER:
+            task_rounds = sum(1 for d in self._decisions if d["task_id"] == task.task_id)
+            if (
+                task_rounds > self.MAX_NEGOTIATION_ROUNDS
+                and decision == NegotiationDecision.COUNTER
+            ):
                 logger.info(
                     "negotiator_max_rounds_exceeded",
                     task_id=task.task_id,

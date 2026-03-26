@@ -58,9 +58,7 @@ class AgentRegistrationFile:
     endpoints: list[str] = field(default_factory=list)
     public_key_ed25519: str = ""  # hex-encoded
     chain_type: str = "ethereum"
-    payment_types: list[str] = field(
-        default_factory=lambda: ["payment-channel", "htlc"]
-    )
+    payment_types: list[str] = field(default_factory=lambda: ["payment-channel", "htlc"])
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:

@@ -31,9 +31,7 @@ def test_agent_identity_from_dict():
 
 
 def test_agent_identity_unregistered():
-    identity = AgentIdentity(
-        agent_id=None, eth_address="0x1", peer_id="QmA", agent_uri=""
-    )
+    identity = AgentIdentity(agent_id=None, eth_address="0x1", peer_id="QmA", agent_uri="")
     assert identity.registered_on_chain is False
     assert identity.agent_id is None
 
@@ -54,9 +52,7 @@ def test_registration_file_to_dict():
 
 
 def test_registration_file_roundtrip():
-    reg = AgentRegistrationFile(
-        name="Agent X", peer_id="QmX", eth_address="0xX"
-    )
+    reg = AgentRegistrationFile(name="Agent X", peer_id="QmX", eth_address="0xX")
     d = reg.to_dict()
     restored = AgentRegistrationFile.from_dict(d)
     assert restored.name == "Agent X"

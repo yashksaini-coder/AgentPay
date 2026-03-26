@@ -64,7 +64,7 @@ class FilecoinSettlement:
         Returns (channel_id, tx_hash).
         """
         receiver = _normalize_address(receiver)
-        nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = build_open_channel_tx(
             contract=self.contract,
             receiver=receiver,
@@ -73,7 +73,7 @@ class FilecoinSettlement:
             sender=self.wallet.address,
             nonce=nonce,
         )
-        signed_tx = self.wallet.sign_transaction(tx)
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "fil_channel_open_tx_sent",
@@ -98,7 +98,7 @@ class FilecoinSettlement:
         voucher: SignedVoucher,
     ) -> str:
         """Initiate channel close on Filecoin FEVM. Returns tx_hash."""
-        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = build_close_channel_tx(
             contract=self.contract,
             channel_id=channel_id,
@@ -109,7 +109,7 @@ class FilecoinSettlement:
             sender=self.wallet.address,
             tx_nonce=tx_nonce,
         )
-        signed_tx = self.wallet.sign_transaction(tx)
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "fil_channel_close_tx_sent",
@@ -125,17 +125,15 @@ class FilecoinSettlement:
         voucher: SignedVoucher,
     ) -> str:
         """Challenge close with higher-nonce voucher. Returns tx_hash."""
-        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = self.contract.functions.challengeClose(
             channel_id,
             voucher.amount,
             voucher.nonce,
             voucher.timestamp,
             voucher.signature,
-        ).build_transaction(
-            {"from": self.wallet.address, "nonce": tx_nonce}
-        )
-        signed_tx = self.wallet.sign_transaction(tx)
+        ).build_transaction({"from": self.wallet.address, "nonce": tx_nonce})  # type: ignore[arg-type]
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "fil_channel_challenge_tx_sent",
@@ -146,13 +144,11 @@ class FilecoinSettlement:
 
     async def withdraw_onchain(self, channel_id: bytes) -> str:
         """Withdraw after challenge period. Returns tx_hash."""
-        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = self.contract.functions.withdraw(
             channel_id,
-        ).build_transaction(
-            {"from": self.wallet.address, "nonce": tx_nonce}
-        )
-        signed_tx = self.wallet.sign_transaction(tx)
+        ).build_transaction({"from": self.wallet.address, "nonce": tx_nonce})  # type: ignore[arg-type]
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "fil_channel_withdraw_tx_sent",
@@ -162,9 +158,7 @@ class FilecoinSettlement:
 
         receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
         if receipt["status"] == 0:
-            raise RuntimeError(
-                f"Withdraw failed for channel {channel_id.hex()[:16]} on FEVM."
-            )
+            raise RuntimeError(f"Withdraw failed for channel {channel_id.hex()[:16]} on FEVM.")
         return tx_hash.hex()
 
     def get_channel_info(self, channel_id: bytes) -> dict[str, Any]:

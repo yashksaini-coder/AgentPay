@@ -48,7 +48,7 @@ class Settlement:
 
         Returns (channel_id, tx_hash).
         """
-        nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = build_open_channel_tx(
             contract=self.contract,
             receiver=receiver,
@@ -57,7 +57,7 @@ class Settlement:
             sender=self.wallet.address,
             nonce=nonce,
         )
-        signed_tx = self.wallet.sign_transaction(tx)
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "channel_open_tx_sent",
@@ -90,7 +90,7 @@ class Settlement:
 
         Returns tx_hash.
         """
-        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = build_close_channel_tx(
             contract=self.contract,
             channel_id=channel_id,
@@ -101,7 +101,7 @@ class Settlement:
             sender=self.wallet.address,
             tx_nonce=tx_nonce,
         )
-        signed_tx = self.wallet.sign_transaction(tx)
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "channel_close_tx_sent",
@@ -124,7 +124,7 @@ class Settlement:
 
         Returns tx_hash.
         """
-        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = self.contract.functions.challengeClose(
             channel_id,
             voucher.amount,
@@ -137,7 +137,7 @@ class Settlement:
                 "nonce": tx_nonce,
             }
         )
-        signed_tx = self.wallet.sign_transaction(tx)
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "channel_challenge_tx_sent",
@@ -156,7 +156,7 @@ class Settlement:
 
         Returns tx_hash.
         """
-        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)
+        tx_nonce = self.w3.eth.get_transaction_count(self.wallet.address)  # type: ignore[arg-type]
         tx = self.contract.functions.withdraw(
             channel_id,
         ).build_transaction(
@@ -165,7 +165,7 @@ class Settlement:
                 "nonce": tx_nonce,
             }
         )
-        signed_tx = self.wallet.sign_transaction(tx)
+        signed_tx = self.wallet.sign_transaction(tx)  # type: ignore[arg-type]
         tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
         logger.info(
             "channel_withdraw_tx_sent",

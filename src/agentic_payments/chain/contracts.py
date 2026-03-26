@@ -171,14 +171,14 @@ def build_open_channel_tx(
         Web3.to_checksum_address(receiver),
         duration,
     ).build_transaction(
-        {
+        {  # type: ignore[arg-type]
             "from": sender,
             "value": deposit_wei,
             "nonce": nonce,
-            **({"gasPrice": gas_price} if gas_price else {}),
+            **({"gasPrice": gas_price} if gas_price else {}),  # type: ignore[typeddict-item]
         }
     )
-    return tx
+    return tx  # type: ignore[return-value]
 
 
 def build_open_token_channel_tx(
@@ -197,12 +197,12 @@ def build_open_token_channel_tx(
         Web3.to_checksum_address(token_address),
         amount,
     ).build_transaction(
-        {
+        {  # type: ignore[arg-type]
             "from": sender,
             "nonce": nonce,
         }
     )
-    return tx
+    return tx  # type: ignore[return-value]
 
 
 def build_close_channel_tx(
@@ -219,9 +219,9 @@ def build_close_channel_tx(
     tx = contract.functions.closeChannel(
         channel_id, amount, nonce, timestamp, signature
     ).build_transaction(
-        {
+        {  # type: ignore[arg-type]
             "from": sender,
             "nonce": tx_nonce,
         }
     )
-    return tx
+    return tx  # type: ignore[return-value]

@@ -142,9 +142,7 @@ def test_oneshot_sufficient_payment():
     """One-shot payment with sufficient amount should be granted."""
     gw = X402Gateway()
     gw.register_resource(GatedResource(path="/api/infer", price=1000))
-    decision, meta = gw.settle_oneshot(
-        path="/api/infer", sender="0x1", amount=1000
-    )
+    decision, meta = gw.settle_oneshot(path="/api/infer", sender="0x1", amount=1000)
     assert decision == AccessDecision.GRANTED
     assert meta["payment_mode"] == "oneshot"
     assert meta["price_charged"] == 1000
@@ -154,9 +152,7 @@ def test_oneshot_insufficient_payment():
     """One-shot payment with insufficient amount should be rejected."""
     gw = X402Gateway()
     gw.register_resource(GatedResource(path="/api/infer", price=1000))
-    decision, meta = gw.settle_oneshot(
-        path="/api/infer", sender="0x1", amount=500
-    )
+    decision, meta = gw.settle_oneshot(path="/api/infer", sender="0x1", amount=500)
     assert decision == AccessDecision.INSUFFICIENT
     assert meta["error"] == "insufficient_payment"
 
@@ -164,9 +160,7 @@ def test_oneshot_insufficient_payment():
 def test_oneshot_ungated_resource():
     """One-shot on a non-gated path should pass through."""
     gw = X402Gateway()
-    decision, meta = gw.settle_oneshot(
-        path="/api/free", sender="0x1", amount=0
-    )
+    decision, meta = gw.settle_oneshot(path="/api/free", sender="0x1", amount=0)
     assert decision == AccessDecision.GRANTED
 
 

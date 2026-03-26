@@ -49,9 +49,7 @@ class IdentityBridge:
         """ERC-8004 agent token ID, or None if not registered."""
         return self._identity.agent_id if self._identity else None
 
-    async def ensure_registered(
-        self, wallet: Any, agent_uri: str = ""
-    ) -> AgentIdentity:
+    async def ensure_registered(self, wallet: Any, agent_uri: str = "") -> AgentIdentity:
         """Register on-chain if not already. Returns identity.
 
         If the agent is already registered (address has a token),

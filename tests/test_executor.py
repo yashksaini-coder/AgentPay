@@ -22,6 +22,7 @@ class TestEchoExecutor:
 class TestCallbackExecutor:
     async def test_wraps_async_callable(self):
         """CallbackExecutor should delegate to the provided async callable."""
+
         async def my_fn(task: AgentTask) -> str:
             return f"processed: {task.task_id}"
 
@@ -32,6 +33,7 @@ class TestCallbackExecutor:
 
     async def test_propagates_errors(self):
         """CallbackExecutor should propagate exceptions from the callback."""
+
         async def failing_fn(task: AgentTask) -> str:
             raise RuntimeError("boom")
 
@@ -45,6 +47,7 @@ class TestCallbackExecutor:
 
     async def test_satisfies_protocol(self):
         """CallbackExecutor should satisfy the Executor protocol."""
+
         async def noop(task: AgentTask) -> str:
             return ""
 

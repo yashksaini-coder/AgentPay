@@ -93,7 +93,7 @@ class AlgorandWallet:
     def sign_transaction(self, txn: object) -> object:
         """Sign an Algorand transaction."""
         _require_algosdk()
-        return txn.sign(self._private_key)  # type: ignore[union-attr]
+        return txn.sign(self._private_key)  # type: ignore[attr-defined]
 
     def sign_bytes(self, data: bytes) -> bytes:
         """Sign arbitrary bytes with the wallet's Ed25519 key.

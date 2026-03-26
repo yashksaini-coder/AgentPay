@@ -72,13 +72,15 @@ class CoordinatorBehavior:
             # Broadcast assignment if possible
             if ctx.broadcast:
                 try:
-                    await ctx.broadcast({
-                        "type": "task_assignment",
-                        "task_id": task.task_id,
-                        "description": task.description,
-                        "worker_peer_id": worker,
-                        "amount": task.amount,
-                    })
+                    await ctx.broadcast(
+                        {
+                            "type": "task_assignment",
+                            "task_id": task.task_id,
+                            "description": task.description,
+                            "worker_peer_id": worker,
+                            "amount": task.amount,
+                        }
+                    )
                 except Exception as exc:
                     logger.warning("coordinator_broadcast_failed", error=str(exc))
 

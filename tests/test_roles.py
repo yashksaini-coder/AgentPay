@@ -61,12 +61,14 @@ class TestRoleManager:
         """Coordinators should be able to create work rounds."""
         rm = RoleManager()
         rm.assign_role(RoleAssignment(role=AgentRole.COORDINATOR))
-        wr = rm.create_work_round(WorkRound(
-            round_id="round-1",
-            coordinator_peer_id="QmCoordinator",
-            task_type="inference",
-            reward_per_worker=1000,
-        ))
+        wr = rm.create_work_round(
+            WorkRound(
+                round_id="round-1",
+                coordinator_peer_id="QmCoordinator",
+                task_type="inference",
+                reward_per_worker=1000,
+            )
+        )
         assert wr.round_id == "round-1"
         assert len(rm.list_work_rounds()) == 1
 
@@ -75,22 +77,26 @@ class TestRoleManager:
         rm = RoleManager()
         rm.assign_role(RoleAssignment(role=AgentRole.WORKER))
         with pytest.raises(ValueError, match="coordinators"):
-            rm.create_work_round(WorkRound(
-                round_id="round-1",
-                coordinator_peer_id="QmWorker",
-                task_type="inference",
-            ))
+            rm.create_work_round(
+                WorkRound(
+                    round_id="round-1",
+                    coordinator_peer_id="QmWorker",
+                    task_type="inference",
+                )
+            )
 
     def test_assign_worker_to_round(self):
         """Should assign workers to a work round up to max_workers."""
         rm = RoleManager()
         rm.assign_role(RoleAssignment(role=AgentRole.COORDINATOR))
-        rm.create_work_round(WorkRound(
-            round_id="round-1",
-            coordinator_peer_id="QmCoordinator",
-            task_type="inference",
-            max_workers=2,
-        ))
+        rm.create_work_round(
+            WorkRound(
+                round_id="round-1",
+                coordinator_peer_id="QmCoordinator",
+                task_type="inference",
+                max_workers=2,
+            )
+        )
         assert rm.assign_worker("round-1", "QmWorker1") is True
         assert rm.assign_worker("round-1", "QmWorker2") is True
         # Max reached

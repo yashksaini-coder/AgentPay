@@ -33,9 +33,7 @@ class WorkerBehavior:
         """Process assigned tasks up to max_concurrent per tick."""
         # Find tasks assigned to us
         assigned = [
-            t
-            for t in ctx.tasks.by_status(TaskStatus.ASSIGNED)
-            if t.worker_peer_id == ctx.peer_id
+            t for t in ctx.tasks.by_status(TaskStatus.ASSIGNED) if t.worker_peer_id == ctx.peer_id
         ]
 
         executed_this_tick = 0

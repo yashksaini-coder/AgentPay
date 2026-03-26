@@ -408,8 +408,12 @@ def register_routes(app: QuartTrio) -> None:
             "eth_address": node.wallet.address if node.wallet else None,
             "addrs": node.listen_addrs,
             "connected_peers": len(node.get_connected_peers()) if node.host else 0,
-            "eip191_bound": node.identity_proof is not None if hasattr(node, "identity_proof") else False,
-            "verified_peers": list(node._verified_identities.keys()) if hasattr(node, "_verified_identities") else [],
+            "eip191_bound": node.identity_proof is not None
+            if hasattr(node, "identity_proof")
+            else False,
+            "verified_peers": list(node._verified_identities.keys())
+            if hasattr(node, "_verified_identities")
+            else [],
         }
         _log_api(
             "/identity", 200, (time.monotonic() - t0) * 1000, detail=result.get("peer_id", "")[:12]
@@ -803,12 +807,16 @@ def register_routes(app: QuartTrio) -> None:
             _log_api("/identity/erc8004", 200, (time.monotonic() - t0) * 1000)
             return {"enabled": False, "registered_on_chain": False}, 200
         identity = node.identity_bridge.identity
-        result = identity.to_dict() if identity else {
-            "enabled": True,
-            "registered_on_chain": False,
-            "eth_address": node.wallet.address if node.wallet else "",
-            "peer_id": node.peer_id.to_base58() if node.peer_id else "",
-        }
+        result = (
+            identity.to_dict()
+            if identity
+            else {
+                "enabled": True,
+                "registered_on_chain": False,
+                "eth_address": node.wallet.address if node.wallet else "",
+                "peer_id": node.peer_id.to_base58() if node.peer_id else "",
+            }
+        )
         result["enabled"] = True
         _log_api("/identity/erc8004", 200, (time.monotonic() - t0) * 1000)
         return result, 200
@@ -1379,7 +1387,7 @@ def register_routes(app: QuartTrio) -> None:
         return status, 200
 
     @app.route("/agent/tasks")
-    async def agent_list_tasks() -> dict:
+    async def agent_list_tasks() -> dict | tuple[dict, int]:
         t0 = time.monotonic()
         node = _node()
         if node.runtime is None:

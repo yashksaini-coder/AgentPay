@@ -48,10 +48,14 @@ class IPFSClient:
             # Multipart form for /add
             boundary = "----AgentPayBoundary"
             body = (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="file"; filename="data"\r\n'
-                f"Content-Type: application/octet-stream\r\n\r\n"
-            ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
+                (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="file"; filename="data"\r\n'
+                    f"Content-Type: application/octet-stream\r\n\r\n"
+                ).encode()
+                + data
+                + f"\r\n--{boundary}--\r\n".encode()
+            )
             req.data = body
             req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
         try:
@@ -78,6 +82,7 @@ class IPFSClient:
 
     async def cat(self, cid: str) -> bytes:
         """Retrieve raw bytes by CID."""
+
         def _cat() -> bytes:
             url = f"{self.api_url}/api/v0/cat?arg={cid}"
             req = urllib.request.Request(url, method="POST")
@@ -97,9 +102,7 @@ class IPFSClient:
     async def pin_add(self, cid: str) -> bool:
         """Pin an existing CID."""
         try:
-            await trio.to_thread.run_sync(
-                lambda: self._post_sync("pin/add", arg=cid)
-            )
+            await trio.to_thread.run_sync(lambda: self._post_sync("pin/add", arg=cid))
             logger.info("ipfs_pin_added", cid=cid)
             return True
         except IPFSError:
@@ -108,9 +111,7 @@ class IPFSClient:
     async def pin_rm(self, cid: str) -> bool:
         """Unpin a CID."""
         try:
-            await trio.to_thread.run_sync(
-                lambda: self._post_sync("pin/rm", arg=cid)
-            )
+            await trio.to_thread.run_sync(lambda: self._post_sync("pin/rm", arg=cid))
             self._pins.pop(cid, None)
             return True
         except IPFSError:
@@ -129,9 +130,7 @@ class IPFSClient:
     async def health(self) -> bool:
         """Check IPFS daemon connectivity."""
         try:
-            result = await trio.to_thread.run_sync(
-                lambda: self._post_sync("id")
-            )
+            result = await trio.to_thread.run_sync(lambda: self._post_sync("id"))
             return "ID" in result
         except IPFSError:
             return False

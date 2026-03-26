@@ -40,9 +40,7 @@ class NegotiationManager:
         if timeout is None:
             timeout = time.time() + DEFAULT_TIMEOUT
         elif timeout <= time.time():
-            raise ValueError(
-                f"Timeout must be an absolute timestamp in the future, got {timeout}"
-            )
+            raise ValueError(f"Timeout must be an absolute timestamp in the future, got {timeout}")
 
         neg = Negotiation(
             negotiation_id=nid,
@@ -90,7 +88,7 @@ class NegotiationManager:
         if by not in (neg.initiator, neg.responder):
             raise ValueError("Only participants can accept")
         neg.state = NegotiationState.ACCEPTED
-        neg.history.append(NegotiationEvent(action="accept", price=neg.current_price, by=by))
+        neg.history.append(NegotiationEvent(action="accept", price=neg.current_price or 0, by=by))
         logger.info("negotiation_accepted", id=negotiation_id[:12], price=neg.current_price)
         return neg
 
@@ -100,7 +98,7 @@ class NegotiationManager:
         if by not in (neg.initiator, neg.responder):
             raise ValueError("Only participants can reject")
         neg.state = NegotiationState.REJECTED
-        neg.history.append(NegotiationEvent(action="reject", price=neg.current_price, by=by))
+        neg.history.append(NegotiationEvent(action="reject", price=neg.current_price or 0, by=by))
         logger.info("negotiation_rejected", id=negotiation_id[:12])
         return neg
 

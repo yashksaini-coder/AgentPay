@@ -96,12 +96,12 @@ export default function NetworkGraph({
   const fgRef = useRef<any>(null);
   const selectedNodeRef = useRef<string | null>(null);
   const onInteractionRef = useRef(onInteraction);
-  onInteractionRef.current = onInteraction;
+  onInteractionRef.current = onInteraction; // eslint-disable-line react-hooks/refs
   const loadingNodeSetRef = useRef(new Set<string>());
   const animatingRouteRef = useRef(animatingRoute);
-  animatingRouteRef.current = animatingRoute;
+  animatingRouteRef.current = animatingRoute; // eslint-disable-line react-hooks/refs
   const trustScoresRef = useRef(trustScores);
-  trustScoresRef.current = trustScores;
+  trustScoresRef.current = trustScores; // eslint-disable-line react-hooks/refs
 
   // netviz-inspired: pulse rings for state transitions
   const pulseRingsRef = useRef<Map<string, { startTime: number; color: string }>>(new Map());
@@ -162,7 +162,6 @@ export default function NetworkGraph({
       if (fg && typeof fg.emitParticle === "function") {
         const graphLinks = fg.graphData?.()?.links ?? [];
         const matchingLink = graphLinks.find(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (l: any) => l.channelId === evt.channelId
         );
         if (matchingLink) {
@@ -270,7 +269,6 @@ export default function NetworkGraph({
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d3Force = fg.d3Force as (name: string, force?: any) => any;
     const link = d3Force("link");
     if (link) {
@@ -289,7 +287,6 @@ export default function NetworkGraph({
     if (hasZoomedRef.current) return;
     const fg = fgRef.current;
     if (!fg || graphData.nodes.length === 0) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fgAny = fg as any;
     const timer = setTimeout(() => {
       if (typeof fgAny.zoom === "function") {
@@ -518,7 +515,6 @@ export default function NetworkGraph({
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden">
-      {/* eslint-disable @typescript-eslint/no-explicit-any */}
       <ForceGraph2D
         ref={fgRef as any}
         graphData={graphData as any}
@@ -547,7 +543,6 @@ export default function NetworkGraph({
         width={dimensions.width}
         height={dimensions.height}
       />
-      {/* eslint-enable @typescript-eslint/no-explicit-any */}
     </div>
   );
 }

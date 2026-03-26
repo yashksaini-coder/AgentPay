@@ -88,6 +88,7 @@ class AgentRuntime:
 
         broadcast = None
         if node.broadcaster is not None:
+
             async def _broadcast(data: dict) -> None:
                 from agentic_payments.pubsub.topics import TOPIC_AGENT_CAPABILITIES
 
@@ -109,7 +110,7 @@ class AgentRuntime:
             broadcast=broadcast,
         )
 
-    async def run(self, task_status: trio.TaskStatus[None] = trio.TASK_STATUS_IGNORED) -> None:
+    async def run(self, task_status: Any = trio.TASK_STATUS_IGNORED) -> None:
         """Run the tick loop. Call via nursery.start(runtime.run) for coordination."""
         self._running = True
         self._cancel_scope = trio.CancelScope()

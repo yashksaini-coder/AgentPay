@@ -229,7 +229,7 @@ class AgentNode:
                 self.settlement = FilecoinSettlement(
                     w3=w3,
                     contract_address=self.config.filecoin.payment_channel_address,
-                    wallet=self.wallet,
+                    wallet=self.wallet,  # type: ignore[arg-type]
                 )
                 logger.info("filecoin_settlement_ready", rpc=self.config.filecoin.rpc_url)
             except Exception as e:
@@ -244,7 +244,7 @@ class AgentNode:
                 self.settlement = Settlement(
                     w3=w3,
                     contract_address=self.config.ethereum.payment_channel_address,
-                    wallet=self.wallet,
+                    wallet=self.wallet,  # type: ignore[arg-type]
                 )
                 logger.info("ethereum_settlement_ready", rpc=self.config.ethereum.rpc_url)
             except Exception as e:
@@ -260,9 +260,7 @@ class AgentNode:
                 from agentic_payments.storage.receipt_store import IPFSReceiptStore
 
                 self.ipfs_client = IPFSClient(self.config.storage.ipfs_api_url)
-                self.ipfs_receipt_store = IPFSReceiptStore(
-                    self.ipfs_client, self.receipt_store
-                )
+                self.ipfs_receipt_store = IPFSReceiptStore(self.ipfs_client, self.receipt_store)
                 logger.info("ipfs_storage_ready", api=self.config.storage.ipfs_api_url)
             except Exception as e:
                 logger.warning("ipfs_storage_unavailable", error=str(e))
@@ -277,13 +275,13 @@ class AgentNode:
 
                 rpc = self.config.erc8004.rpc_url or self.config.ethereum.rpc_url
                 w3 = Web3Import(Web3Import.HTTPProvider(rpc))
-                self.erc8004_client = ERC8004Client(
+                self.erc8004_client = ERC8004Client(  # type: ignore[assignment]
                     w3=w3,
                     identity_addr=self.config.erc8004.identity_registry_address,
                     reputation_addr=self.config.erc8004.reputation_registry_address,
                 )
-                self.identity_bridge = IdentityBridge(
-                    client=self.erc8004_client,
+                self.identity_bridge = IdentityBridge(  # type: ignore[assignment]
+                    client=self.erc8004_client,  # type: ignore[arg-type]
                     peer_id=self.peer_id.to_base58() if self.peer_id else "",
                     wallet_address=self.wallet.address,
                 )
@@ -333,16 +331,16 @@ class AgentNode:
             self.gateway.register_resource(GatedResource.from_dict(r))
 
         # --- libp2p host ---
-        self.host = new_host(
+        self.host = new_host(  # type: ignore[assignment]
             key_pair=key_pair,
             muxer_preference="YAMUX",
             enable_mDNS=self.config.node.enable_mdns,
         )
 
         # --- Register payment protocol ---
-        self.host.set_stream_handler(
+        self.host.set_stream_handler(  # type: ignore[union-attr]
             TProtocol(PROTOCOL_ID),
-            self._handle_incoming_stream,
+            self._handle_incoming_stream,  # type: ignore[arg-type]
         )
 
         # --- Listen addresses ---
@@ -353,8 +351,8 @@ class AgentNode:
             listen_addrs.append(Multiaddr(f"/ip4/0.0.0.0/tcp/{self.config.node.ws_port}/ws"))
 
         # --- Start host ---
-        async with self.host.run(listen_addrs=listen_addrs):
-            self.listen_addrs = [str(addr) for addr in self.host.get_addrs()]
+        async with self.host.run(listen_addrs=listen_addrs):  # type: ignore[union-attr]
+            self.listen_addrs = [str(addr) for addr in self.host.get_addrs()]  # type: ignore[union-attr]
             logger.info(
                 "agent_node_started",
                 peer_id=self.peer_id.to_base58(),
@@ -375,7 +373,7 @@ class AgentNode:
                 score_params=score_params,
             )
             self.pubsub = Pubsub(
-                host=self.host,
+                host=self.host,  # type: ignore[arg-type]
                 router=self.gossipsub,
                 strict_signing=True,
             )
@@ -386,7 +384,7 @@ class AgentNode:
 
             # --- Peer discovery (with bootstrap peers) ---
             self.discovery = PeerDiscovery(
-                self.host,
+                self.host,  # type: ignore[arg-type]
                 bootstrap_addrs=self.config.node.bootstrap_peers,
             )
             nursery.start_soon(self.discovery.run, nursery)
@@ -402,10 +400,14 @@ class AgentNode:
 
                 # Build negotiator if enabled
                 if self.config.agent.auto_negotiate:
-                    strategies.append(AutonomousNegotiator(NegotiationConfig(
-                        max_price=self.config.agent.max_price,
-                        min_trust_score=self.config.agent.min_trust_score,
-                    )))
+                    strategies.append(
+                        AutonomousNegotiator(
+                            NegotiationConfig(
+                                max_price=self.config.agent.max_price,
+                                min_trust_score=self.config.agent.min_trust_score,
+                            )
+                        )
+                    )
 
                 # Role-specific strategies
                 role = self.role_manager.role
@@ -464,34 +466,34 @@ class AgentNode:
     async def _run_pubsub(self) -> None:
         """Run the GossipSub pubsub service and subscribe to all topics."""
         try:
-            async with background_trio_service(self.pubsub):
-                await self.broadcaster.subscribe_all()
+            async with background_trio_service(self.pubsub):  # type: ignore[arg-type]
+                await self.broadcaster.subscribe_all()  # type: ignore[union-attr]
 
                 # Announce ourselves on the discovery topic (with EIP-191 proof)
                 announce_data = {
                     "type": "announce",
-                    "peer_id": self.peer_id.to_base58(),
-                    "eth_address": self.wallet.address,
+                    "peer_id": self.peer_id.to_base58(),  # type: ignore[union-attr]
+                    "eth_address": self.wallet.address,  # type: ignore[union-attr]
                     "addrs": self.listen_addrs,
                 }
                 if self.identity_proof:
                     announce_data["identity_proof"] = self.identity_proof.to_dict()
-                await self.broadcaster.publish(TOPIC_AGENT_DISCOVERY, announce_data)
+                await self.broadcaster.publish(TOPIC_AGENT_DISCOVERY, announce_data)  # type: ignore[union-attr]
 
                 # Register handlers for pubsub topics
-                self.broadcaster.on_message(
+                self.broadcaster.on_message(  # type: ignore[union-attr]
                     TOPIC_CHANNEL_ANNOUNCEMENTS,
                     self._handle_channel_announce,
                 )
-                self.broadcaster.on_message(
+                self.broadcaster.on_message(  # type: ignore[union-attr]
                     TOPIC_AGENT_CAPABILITIES,
                     self._handle_capability_announce,
                 )
-                self.broadcaster.on_message(
+                self.broadcaster.on_message(  # type: ignore[union-attr]
                     TOPIC_AGENT_DISCOVERY,
                     self._handle_discovery_announce,
                 )
-                self.broadcaster.on_message(
+                self.broadcaster.on_message(  # type: ignore[union-attr]
                     TOPIC_PAYMENT_RECEIPTS,
                     self._handle_receipt_announce,
                 )
@@ -503,19 +505,19 @@ class AgentNode:
                 self._sync_graph_from_channels()
 
                 # Announce all existing active channels on gossipsub
-                for ch in self.channel_manager.list_channels():
+                for ch in self.channel_manager.list_channels():  # type: ignore[union-attr]
                     if ch.state.name in ("ACTIVE", "OPEN"):
-                        await self.broadcaster.broadcast_channel(
+                        await self.broadcaster.broadcast_channel(  # type: ignore[union-attr]
                             {
                                 "channel_id": ch.channel_id.hex(),
-                                "peer_a": self.peer_id.to_base58(),
+                                "peer_a": self.peer_id.to_base58(),  # type: ignore[union-attr]
                                 "peer_b": ch.peer_id,
                                 "capacity": ch.total_deposit,
                             }
                         )
 
                 # Run listeners for incoming pubsub messages
-                await self.broadcaster.run(self._nursery)
+                await self.broadcaster.run(self._nursery)  # type: ignore[union-attr, arg-type]
 
                 # Keep the pubsub service alive until cancelled
                 await trio.sleep_forever()
@@ -525,7 +527,7 @@ class AgentNode:
 
     async def _handle_incoming_stream(self, stream: NetStream) -> None:
         """Handle an incoming payment protocol stream from a remote peer."""
-        await self.protocol_handler.handle_stream(stream)
+        await self.protocol_handler.handle_stream(stream)  # type: ignore[union-attr]
 
     async def stop(self) -> None:
         """Stop the agent node."""
@@ -542,7 +544,7 @@ class AgentNode:
         self._require_started()
         maddr = Multiaddr(peer_multiaddr)
         peer_info = info_from_p2p_addr(maddr)
-        await self.host.connect(peer_info)
+        await self.host.connect(peer_info)  # type: ignore[union-attr]
 
         if self.discovery:
             self.discovery.on_peer_connected(
@@ -561,7 +563,7 @@ class AgentNode:
         """Disconnect from a peer and clean up cached streams."""
         self._require_started()
         pid = PeerID.from_base58(peer_id)
-        await self.host.disconnect(pid)
+        await self.host.disconnect(pid)  # type: ignore[union-attr]
         # Clean up cached stream for this peer
         self._streams.pop(peer_id, None)
         logger.info("peer_disconnected", peer_id=peer_id)
@@ -595,8 +597,8 @@ class AgentNode:
         """Open a new payment protocol stream to a peer via the libp2p host."""
         self._require_started()
         pid = PeerID.from_base58(peer_id)
-        stream = await self.host.new_stream(pid, [TProtocol(PROTOCOL_ID)])
-        return stream
+        stream = await self.host.new_stream(pid, [TProtocol(PROTOCOL_ID)])  # type: ignore[union-attr]
+        return stream  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
     # Payment channel operations
@@ -619,12 +621,12 @@ class AgentNode:
         self.policy_engine.check_channel_open(deposit, peer_id)
 
         msg = PaymentOpen.new(
-            sender=self.wallet.address,
+            sender=self.wallet.address,  # type: ignore[union-attr]
             receiver=receiver,
             total_deposit=deposit,
         )
 
-        channel = self.channel_manager.create_channel(
+        channel = self.channel_manager.create_channel(  # type: ignore[union-attr]
             channel_id=msg.channel_id,
             receiver=receiver,
             total_deposit=deposit,
@@ -646,13 +648,13 @@ class AgentNode:
                 self._streams[peer_id] = stream
                 logger.info("channel_opened", channel_id=msg.channel_id.hex()[:16])
             else:
-                self.channel_manager.remove_channel(msg.channel_id)
+                self.channel_manager.remove_channel(msg.channel_id)  # type: ignore[union-attr]
                 raise RuntimeError(f"Channel open rejected: {ack.reason}")
         except RuntimeError:
             raise
         except Exception:
             # Clean up orphaned channel on any failure
-            self.channel_manager.remove_channel(msg.channel_id)
+            self.channel_manager.remove_channel(msg.channel_id)  # type: ignore[union-attr]
             raise
 
         # Announce channel on gossipsub for routing topology
@@ -676,7 +678,7 @@ class AgentNode:
         Uses per-peer lock to prevent concurrent stream corruption.
         """
         self._require_started()
-        channel = self.channel_manager.get_channel(channel_id)
+        channel = self.channel_manager.get_channel(channel_id)  # type: ignore[union-attr]
         peer_id = channel.peer_id
         lock = self._get_stream_lock(peer_id)
 
@@ -687,10 +689,10 @@ class AgentNode:
                 async def send_fn(msg):
                     await write_message(stream, to_wire(MessageType.PAYMENT_UPDATE, msg))
 
-                voucher = await self.channel_manager.send_payment(
+                voucher = await self.channel_manager.send_payment(  # type: ignore[union-attr]
                     channel_id=channel_id,
                     amount=amount,
-                    private_key=self.wallet.private_key,
+                    private_key=self.wallet.private_key,  # type: ignore[union-attr]
                     send_fn=send_fn,
                     task_id=task_id,
                 )
@@ -745,7 +747,7 @@ class AgentNode:
             sender=channel.sender,
             receiver=channel.receiver,
             previous_receipt_hash=prev_hash,
-            private_key=self.wallet.private_key,
+            private_key=self.wallet.private_key,  # type: ignore[union-attr]
         )
         self.receipt_store.add(receipt)
 
@@ -762,7 +764,7 @@ class AgentNode:
         Cleans up the stream cache after closing.
         """
         self._require_started()
-        channel = self.channel_manager.get_channel(channel_id)
+        channel = self.channel_manager.get_channel(channel_id)  # type: ignore[union-attr]
         peer_id = channel.peer_id
 
         msg = PaymentClose(
@@ -811,14 +813,14 @@ class AgentNode:
         # Also add to our own graph
         self.network_graph.add_channel(
             channel_id=channel.channel_id.hex(),
-            peer_a=self.peer_id.to_base58(),
+            peer_a=self.peer_id.to_base58(),  # type: ignore[union-attr]
             peer_b=channel.peer_id,
             capacity=channel.total_deposit,
         )
         await self.broadcaster.broadcast_channel(
             {
                 "channel_id": channel.channel_id.hex(),
-                "peer_a": self.peer_id.to_base58(),
+                "peer_a": self.peer_id.to_base58(),  # type: ignore[union-attr]
                 "peer_b": channel.peer_id,
                 "capacity": channel.total_deposit,
             }
@@ -859,7 +861,7 @@ class AgentNode:
         base_timeout = int(time.time()) + 600  # 10 minute base timeout
         return find_route(
             graph=self.network_graph,
-            source=self.peer_id.to_base58(),
+            source=self.peer_id.to_base58(),  # type: ignore[union-attr]
             destination=destination,
             amount=amount,
             base_timeout=base_timeout,
@@ -956,10 +958,10 @@ class AgentNode:
                     async def send_fn(msg):
                         await write_message(stream, to_wire(MessageType.PAYMENT_UPDATE, msg))
 
-                    await self.channel_manager.send_payment(
+                    await self.channel_manager.send_payment(  # type: ignore[union-attr]
                         channel_id=channel.channel_id,
                         amount=amount,
-                        private_key=self.wallet.private_key,
+                        private_key=self.wallet.private_key,  # type: ignore[union-attr]
                         send_fn=send_fn,
                     )
                     # Read the PAYMENT_ACK response (prevents stream buffer offset)
@@ -997,12 +999,13 @@ class AgentNode:
                 "route": route.to_dict(),
                 "amount": amount,
             }
+        raise RuntimeError("Unreachable: routed payment ended without result")
 
     def _find_channel_to_peer(self, peer_id: str) -> PaymentChannel | None:
         """Find an active channel to a specific peer where we are the sender."""
         local_addr = self.wallet.address if self.wallet else ""
         # Prefer channels where we are the sender (can pay out)
-        for ch in self.channel_manager.list_channels():
+        for ch in self.channel_manager.list_channels():  # type: ignore[union-attr]
             if ch.peer_id == peer_id and ch.state.name == "ACTIVE" and ch.sender == local_addr:
                 return ch
         return None
@@ -1248,8 +1251,8 @@ class AgentNode:
             for cap in caps:
                 cap.role = current_role.value
         ad = AgentAdvertisement(
-            peer_id=self.peer_id.to_base58(),
-            eth_address=self.wallet.address,
+            peer_id=self.peer_id.to_base58(),  # type: ignore[union-attr]
+            eth_address=self.wallet.address,  # type: ignore[union-attr]
             capabilities=caps,
             addrs=self.listen_addrs,
         )
@@ -1275,7 +1278,7 @@ class AgentNode:
         peer_id = data.get("peer_id", str(from_peer))
         eth_address = data.get("eth_address", "")
         addrs = data.get("addrs", [])
-        if peer_id and peer_id != self.peer_id.to_base58():
+        if peer_id and peer_id != self.peer_id.to_base58():  # type: ignore[union-attr]
             # Verify EIP-191 identity proof if present
             proof_data = data.get("identity_proof")
             if proof_data:
@@ -1333,7 +1336,7 @@ class AgentNode:
         """Handle incoming negotiation proposal."""
         neg = self.negotiation_manager.propose(
             initiator=remote_peer,
-            responder=self.peer_id.to_base58(),
+            responder=self.peer_id.to_base58(),  # type: ignore[union-attr]
             service_type=msg.service_type,
             proposed_price=msg.proposed_price,
             channel_deposit=msg.channel_deposit,
@@ -1405,7 +1408,7 @@ class AgentNode:
         """Initiate a negotiation with a peer. Auto-opens channel on accept."""
         self._require_started()
         neg = self.negotiation_manager.propose(
-            initiator=self.peer_id.to_base58(),
+            initiator=self.peer_id.to_base58(),  # type: ignore[union-attr]
             responder=peer_id,
             service_type=service_type,
             proposed_price=proposed_price,

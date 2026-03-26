@@ -186,17 +186,13 @@ class X402Gateway:
         # No payment proof provided → 402
         if proof is None:
             self._log_access(path, "", AccessDecision.PAYMENT_REQUIRED, resource.price)
-            return AccessDecision.PAYMENT_REQUIRED, self._payment_required_meta(
-                resource
-            )
+            return AccessDecision.PAYMENT_REQUIRED, self._payment_required_meta(resource)
 
         # Trust gate check
         if resource.min_trust_score > 0 and self._reputation_tracker:
             rep = self._reputation_tracker.get_reputation(proof.sender)
             if rep and rep.trust_score < resource.min_trust_score:
-                self._log_access(
-                    path, proof.sender, AccessDecision.INSUFFICIENT, resource.price
-                )
+                self._log_access(path, proof.sender, AccessDecision.INSUFFICIENT, resource.price)
                 return AccessDecision.INSUFFICIENT, {
                     "error": "trust_score_too_low",
                     "error_code": PaymentErrorCode.TRUST_BELOW_MINIMUM.name,
@@ -206,9 +202,7 @@ class X402Gateway:
 
         # Verify payment amount covers resource price
         if proof.amount < resource.price:
-            self._log_access(
-                path, proof.sender, AccessDecision.INSUFFICIENT, resource.price
-            )
+            self._log_access(path, proof.sender, AccessDecision.INSUFFICIENT, resource.price)
             return AccessDecision.INSUFFICIENT, {
                 "error": "insufficient_payment",
                 "error_code": PaymentErrorCode.INSUFFICIENT_PAYMENT.name,
@@ -218,13 +212,9 @@ class X402Gateway:
 
         # Verify channel exists and has sufficient balance
         if self._channel_manager and proof.channel_id:
-            channel = self._channel_manager.get_channel(
-                bytes.fromhex(proof.channel_id)
-            )
+            channel = self._channel_manager.get_channel(bytes.fromhex(proof.channel_id))
             if channel is None:
-                self._log_access(
-                    path, proof.sender, AccessDecision.INVALID_PROOF, resource.price
-                )
+                self._log_access(path, proof.sender, AccessDecision.INVALID_PROOF, resource.price)
                 return AccessDecision.INVALID_PROOF, {
                     "error": "channel_not_found",
                     "error_code": PaymentErrorCode.CHANNEL_NOT_FOUND.name,
@@ -232,9 +222,7 @@ class X402Gateway:
 
             remaining = channel.total_deposit - channel.total_paid
             if remaining < resource.price:
-                self._log_access(
-                    path, proof.sender, AccessDecision.INSUFFICIENT, resource.price
-                )
+                self._log_access(path, proof.sender, AccessDecision.INSUFFICIENT, resource.price)
                 return AccessDecision.INSUFFICIENT, {
                     "error": "channel_balance_insufficient",
                     "error_code": PaymentErrorCode.INSUFFICIENT_FUNDS.name,
@@ -359,9 +347,7 @@ class X402Gateway:
         """Return recent access log entries."""
         return [entry.to_dict() for entry in self._access_log[-limit:]]
 
-    def _log_access(
-        self, path: str, sender: str, decision: AccessDecision, price: int
-    ) -> None:
+    def _log_access(self, path: str, sender: str, decision: AccessDecision, price: int) -> None:
         self._access_log.append(AccessLog(path, sender, decision, price))
 
     def _payment_required_meta(self, resource: GatedResource) -> dict:

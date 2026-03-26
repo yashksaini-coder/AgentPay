@@ -165,7 +165,9 @@ class PaymentProtocolHandler:
                 status="accepted",
             )
         except PaymentError as e:
-            logger.warning("open_rejected", error_code=e.code.name, error=str(e), remote_peer=remote_peer)
+            logger.warning(
+                "open_rejected", error_code=e.code.name, error=str(e), remote_peer=remote_peer
+            )
             return MessageType.PAYMENT_ACK, PaymentAck(
                 channel_id=msg.channel_id,
                 nonce=msg.nonce,
@@ -199,7 +201,9 @@ class PaymentProtocolHandler:
                 status="accepted",
             )
         except PaymentError as e:
-            logger.warning("update_rejected", error_code=e.code.name, error=str(e), remote_peer=remote_peer)
+            logger.warning(
+                "update_rejected", error_code=e.code.name, error=str(e), remote_peer=remote_peer
+            )
             return MessageType.PAYMENT_ACK, PaymentAck(
                 channel_id=msg.channel_id,
                 nonce=msg.nonce,

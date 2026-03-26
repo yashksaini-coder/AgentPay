@@ -55,9 +55,7 @@ class TestEvaluateOffer:
 
     def test_counter_over_budget(self):
         """Should counter at ratio when price > max_price."""
-        neg = AutonomousNegotiator(
-            NegotiationConfig(max_price=500, counter_offer_ratio=0.6)
-        )
+        neg = AutonomousNegotiator(NegotiationConfig(max_price=500, counter_offer_ratio=0.6))
         ctx = _make_ctx(TaskStore(), reputation=_MockReputation({"peer-A": 0.8}))
         decision, counter = neg.evaluate_offer(price=1000, peer_id="peer-A", ctx=ctx)
         assert decision == NegotiationDecision.COUNTER
@@ -82,12 +80,14 @@ class TestNegotiatorTick:
     async def test_accept_assigns_task(self):
         """Negotiator tick should assign accepted tasks."""
         store = TaskStore()
-        store.add(AgentTask(
-            task_id="t1",
-            description="work",
-            requester_peer_id="peer-A",
-            amount=100,
-        ))
+        store.add(
+            AgentTask(
+                task_id="t1",
+                description="work",
+                requester_peer_id="peer-A",
+                amount=100,
+            )
+        )
         neg = AutonomousNegotiator(NegotiationConfig(max_price=200))
         ctx = _make_ctx(store, peer_id="QmLocal", reputation=_MockReputation({"peer-A": 0.8}))
         await neg.tick(ctx)
@@ -97,12 +97,14 @@ class TestNegotiatorTick:
     async def test_reject_fails_task(self):
         """Negotiator tick should fail rejected tasks."""
         store = TaskStore()
-        store.add(AgentTask(
-            task_id="t1",
-            description="work",
-            requester_peer_id="peer-A",
-            amount=100,
-        ))
+        store.add(
+            AgentTask(
+                task_id="t1",
+                description="work",
+                requester_peer_id="peer-A",
+                amount=100,
+            )
+        )
         neg = AutonomousNegotiator(NegotiationConfig(min_trust_score=0.99))
         ctx = _make_ctx(store, reputation=_MockReputation({"peer-A": 0.1}))
         await neg.tick(ctx)
@@ -112,12 +114,14 @@ class TestNegotiatorTick:
     async def test_skips_own_tasks(self):
         """Should skip tasks where requester == self (no self-negotiation)."""
         store = TaskStore()
-        store.add(AgentTask(
-            task_id="t1",
-            description="my own task",
-            requester_peer_id="QmLocal",
-            amount=100,
-        ))
+        store.add(
+            AgentTask(
+                task_id="t1",
+                description="my own task",
+                requester_peer_id="QmLocal",
+                amount=100,
+            )
+        )
         neg = AutonomousNegotiator()
         ctx = _make_ctx(store, peer_id="QmLocal")
         await neg.tick(ctx)

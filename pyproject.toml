@@ -4,6 +4,27 @@ version = "0.1.0"
 description = "P2P agentic payments over libp2p"
 requires-python = ">=3.12"
 license = "MIT"
+authors = [{ name = "Yash K. Saini", email = "yashksaini.coder@gmail.com" }]
+readme = "README.md"
+keywords = [
+    "agents",
+    "payments",
+    "libp2p",
+    "micropayments",
+    "p2p",
+    "ethereum",
+    "filecoin",
+    "algorand",
+    "ai-agents",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "libp2p>=0.6.0",
@@ -31,6 +52,12 @@ dev = [
 
 [project.scripts]
 agentpay = "agentic_payments.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/yashksaini-coder/AgentPay"
+Repository = "https://github.com/yashksaini-coder/AgentPay"
+Documentation = "https://yashksaini-coder.github.io/AgentPay/"
+Issues = "https://github.com/yashksaini-coder/AgentPay/issues"
 
 [build-system]
 requires = ["hatchling"]

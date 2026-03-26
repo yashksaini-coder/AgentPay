@@ -277,6 +277,19 @@ def start(
         logger.info("shutting_down")
 
 
+@app.command()
+def demo(
+    agent_enabled: bool = typer.Option(False, help="Enable autonomous agent runtime"),
+    agent_tick: float = typer.Option(5.0, help="Agent runtime tick interval"),
+    log_level: str = typer.Option("WARNING", help="Log level for agent nodes"),
+) -> None:
+    """Run a full 2-agent payment demo (agents start automatically)."""
+    _setup_logging(level=log_level)
+    from agentic_payments.demo import run_demo
+
+    trio.run(run_demo, agent_enabled, agent_tick)
+
+
 @identity_app.command("generate")
 def identity_generate(
     path: Path = typer.Option(Path("~/.agentic-payments/identity.key"), help="Output path"),

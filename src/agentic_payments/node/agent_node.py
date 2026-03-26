@@ -16,6 +16,7 @@ from libp2p.peer.id import ID as PeerID
 from libp2p.peer.peerinfo import info_from_p2p_addr
 from libp2p.pubsub.gossipsub import GossipSub
 from libp2p.pubsub.pubsub import Pubsub
+from libp2p.pubsub.score import ScoreParams, TopicScoreParams
 from multiaddr import Multiaddr
 
 from agentic_payments.chain.protocols import WalletProtocol, SettlementProtocol
@@ -27,8 +28,15 @@ from agentic_payments.sla.monitor import SLAMonitor
 from agentic_payments.discovery.models import AgentAdvertisement, AgentCapability
 from agentic_payments.discovery.registry import CapabilityRegistry
 from agentic_payments.gateway.x402 import GatedResource, X402Gateway
+from agentic_payments.identity.eip191 import IdentityProof, sign_identity, verify_identity
 from agentic_payments.negotiation.manager import NegotiationManager
 from agentic_payments.node.discovery import PeerDiscovery
+from agentic_payments.agent.coordinator import CoordinatorBehavior
+from agentic_payments.agent.executor import EchoExecutor
+from agentic_payments.agent.negotiator import AutonomousNegotiator, NegotiationConfig
+from agentic_payments.agent.runtime import AgentRuntime
+from agentic_payments.agent.worker import WorkerBehavior
+from agentic_payments.node.roles import AgentRole, RoleManager
 from agentic_payments.node.identity import load_or_generate_identity, peer_id_from_keypair
 from agentic_payments.payments.channel import PaymentChannel
 from agentic_payments.payments.manager import ChannelManager
@@ -105,6 +113,10 @@ class AgentNode:
         # Preimages we generated (for payments we initiated)
         self._preimages: dict[bytes, bytes] = {}  # payment_hash -> preimage
 
+        # EIP-191 identity binding
+        self.identity_proof: IdentityProof | None = None
+        self._verified_identities: dict[str, IdentityProof] = {}  # peer_id -> proof
+
         # --- New subsystems ---
         self.capability_registry: CapabilityRegistry = CapabilityRegistry(
             stale_threshold=config.discovery.stale_threshold
@@ -127,6 +139,8 @@ class AgentNode:
         self.identity_bridge = None
         self.pricing_engine: PricingEngine | None = None  # initialized after wallet
         self.dispute_monitor: DisputeMonitor | None = None  # initialized after channel_manager
+        self.role_manager: RoleManager = RoleManager()
+        self.runtime: AgentRuntime | None = None
 
     def _require_started(self) -> None:
         """Guard: ensure the node has been started."""
@@ -177,6 +191,17 @@ class AgentNode:
             logger.info("ethereum_wallet_generated", address=self.wallet.address)
 
         self.channel_manager = ChannelManager(self.wallet.address, policy_engine=self.policy_engine)
+
+        # --- EIP-191 Identity Binding ---
+        self.identity_proof = sign_identity(
+            peer_id=self.peer_id.to_base58(),
+            private_key=self.wallet.private_key,
+        )
+        logger.info(
+            "eip191_identity_bound",
+            peer_id=self.peer_id.to_base58()[:16],
+            eth_address=self.wallet.address,
+        )
 
         # --- Settlement (chain-aware, optional — requires RPC connectivity) ---
         if self.config.chain_type == "algorand" and self.config.algorand.app_id:
@@ -339,13 +364,15 @@ class AgentNode:
                 settlement="active" if self.settlement else "off-chain only",
             )
 
-            # --- GossipSub pubsub ---
+            # --- GossipSub pubsub (with peer scoring) ---
+            score_params = self._build_gossipsub_score_params()
             self.gossipsub = GossipSub(
                 protocols=GOSSIPSUB_PROTOCOLS,
                 degree=8,
                 degree_low=6,
                 degree_high=12,
                 heartbeat_interval=120,
+                score_params=score_params,
             )
             self.pubsub = Pubsub(
                 host=self.host,
@@ -369,8 +396,70 @@ class AgentNode:
 
             await nursery.start(serve_api, self.config.api, self)
 
+            # --- Agent Runtime (optional) ---
+            if self.config.agent.enabled:
+                strategies: list = []
+
+                # Build negotiator if enabled
+                if self.config.agent.auto_negotiate:
+                    strategies.append(AutonomousNegotiator(NegotiationConfig(
+                        max_price=self.config.agent.max_price,
+                        min_trust_score=self.config.agent.min_trust_score,
+                    )))
+
+                # Role-specific strategies
+                role = self.role_manager.role
+                if role == AgentRole.WORKER:
+                    strategies.append(WorkerBehavior(executor=EchoExecutor()))
+                elif role == AgentRole.COORDINATOR:
+                    strategies.append(CoordinatorBehavior())
+
+                self.runtime = AgentRuntime(
+                    node=self,
+                    strategies=strategies,
+                    executor=EchoExecutor(),
+                    tick_interval=self.config.agent.tick_interval,
+                )
+                await nursery.start(self.runtime.run)
+                logger.info(
+                    "agent_runtime_launched",
+                    strategies=[type(s).__name__ for s in strategies],
+                    tick_interval=self.config.agent.tick_interval,
+                )
+
             # Block until cancelled
             await trio.sleep_forever()
+
+    def _build_gossipsub_score_params(self) -> ScoreParams:
+        """Build GossipSub scoring parameters wired to our reputation system.
+
+        Scoring weights (inspired by libp2p-v4-swap-agents):
+        - P1 (time in mesh): weight 0.5, cap 3600
+        - P2 (first message deliveries): weight 1.0, cap 100
+        - P3 (mesh message deliveries): weight -1.0 (penalty for slow delivery)
+        - P4 (invalid messages): weight -10.0 (harsh penalty)
+        - P6 (app-specific): weight 10.0, uses reputation_tracker trust scores
+        - Graylist threshold: -400 (matches libp2p-v4-swap-agents)
+        """
+
+        def _app_score(peer_id: PeerID) -> float:
+            """Map reputation trust score (0.0-1.0) to app-specific score (-100 to +100)."""
+            trust = self.reputation_tracker.get_trust_score(str(peer_id))
+            # Map 0.0-1.0 → -100 to +100 (0.5 = neutral = 0)
+            return (trust - 0.5) * 200
+
+        return ScoreParams(
+            p1_time_in_mesh=TopicScoreParams(weight=0.5, cap=3600.0, decay=0.9997),
+            p2_first_message_deliveries=TopicScoreParams(weight=1.0, cap=100.0, decay=0.999),
+            p3_mesh_message_deliveries=TopicScoreParams(weight=-1.0, cap=0.0, decay=0.997),
+            p4_invalid_messages=TopicScoreParams(weight=-10.0, cap=0.0, decay=0.99),
+            p6_appl_slack_weight=10.0,
+            p6_appl_slack_decay=0.999,
+            graylist_threshold=-400.0,
+            gossip_threshold=-100.0,
+            publish_threshold=-200.0,
+            app_specific_score_fn=_app_score,
+        )
 
     async def _run_pubsub(self) -> None:
         """Run the GossipSub pubsub service and subscribe to all topics."""
@@ -378,16 +467,16 @@ class AgentNode:
             async with background_trio_service(self.pubsub):
                 await self.broadcaster.subscribe_all()
 
-                # Announce ourselves on the discovery topic
-                await self.broadcaster.publish(
-                    TOPIC_AGENT_DISCOVERY,
-                    {
-                        "type": "announce",
-                        "peer_id": self.peer_id.to_base58(),
-                        "eth_address": self.wallet.address,
-                        "addrs": self.listen_addrs,
-                    },
-                )
+                # Announce ourselves on the discovery topic (with EIP-191 proof)
+                announce_data = {
+                    "type": "announce",
+                    "peer_id": self.peer_id.to_base58(),
+                    "eth_address": self.wallet.address,
+                    "addrs": self.listen_addrs,
+                }
+                if self.identity_proof:
+                    announce_data["identity_proof"] = self.identity_proof.to_dict()
+                await self.broadcaster.publish(TOPIC_AGENT_DISCOVERY, announce_data)
 
                 # Register handlers for pubsub topics
                 self.broadcaster.on_message(
@@ -579,7 +668,7 @@ class AgentNode:
 
         return channel
 
-    async def pay(self, channel_id: bytes, amount: int) -> SignedVoucher:
+    async def pay(self, channel_id: bytes, amount: int, task_id: str = "") -> SignedVoucher:
         """Send a micropayment voucher on an existing channel.
 
         Creates a signed voucher, sends it, waits for ACK.
@@ -603,6 +692,7 @@ class AgentNode:
                     amount=amount,
                     private_key=self.wallet.private_key,
                     send_fn=send_fn,
+                    task_id=task_id,
                 )
 
                 raw = await read_message(stream)
@@ -1152,6 +1242,11 @@ class AgentNode:
         if not self.broadcaster:
             return
         caps = [AgentCapability.from_dict(c) for c in self.config.discovery.capabilities]
+        # Wire current role into capabilities for discovery
+        current_role = self.role_manager.role
+        if current_role:
+            for cap in caps:
+                cap.role = current_role.value
         ad = AgentAdvertisement(
             peer_id=self.peer_id.to_base58(),
             eth_address=self.wallet.address,
@@ -1181,6 +1276,27 @@ class AgentNode:
         eth_address = data.get("eth_address", "")
         addrs = data.get("addrs", [])
         if peer_id and peer_id != self.peer_id.to_base58():
+            # Verify EIP-191 identity proof if present
+            proof_data = data.get("identity_proof")
+            if proof_data:
+                try:
+                    proof = IdentityProof.from_dict(proof_data)
+                    if verify_identity(proof) and proof.peer_id == peer_id:
+                        self._verified_identities[peer_id] = proof
+                        logger.info(
+                            "eip191_identity_verified",
+                            peer_id=peer_id[:16],
+                            eth_address=proof.eth_address,
+                        )
+                    else:
+                        logger.warning(
+                            "eip191_identity_rejected",
+                            peer_id=peer_id[:16],
+                            claimed_address=proof_data.get("eth_address", ""),
+                        )
+                except (KeyError, ValueError, TypeError):
+                    logger.debug("eip191_proof_parse_error", peer_id=peer_id[:16])
+
             ad = AgentAdvertisement(
                 peer_id=peer_id,
                 eth_address=eth_address,

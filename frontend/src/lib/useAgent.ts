@@ -19,7 +19,7 @@ export interface AgentState {
 /** WebSocket state snapshot pushed by the backend /ws endpoint. */
 interface WsSnapshot {
   type: "state";
-  identity: Identity;
+  identity: Identity; // includes eip191_bound and verified_peers
   balance: Balance;
   peers: { peers: Peer[]; count: number; connected: number };
   channels: { channels: Channel[]; count: number };

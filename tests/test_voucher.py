@@ -59,3 +59,42 @@ class TestSignedVoucher:
         assert v2.amount > v1.amount
         assert v1.verify(eth_keypair.address)
         assert v2.verify(eth_keypair.address)
+
+    def test_task_id_correlation(self, eth_keypair, channel_id):
+        """Voucher should carry task_id for work-request correlation."""
+        voucher = SignedVoucher.create(
+            channel_id=channel_id,
+            nonce=1,
+            amount=1000,
+            private_key=eth_keypair.key.hex(),
+            task_id="task-abc-123",
+        )
+
+        assert voucher.task_id == "task-abc-123"
+        assert voucher.verify(eth_keypair.address)
+
+        # Roundtrip through dict
+        data = voucher.to_dict()
+        assert data["task_id"] == "task-abc-123"
+        restored = SignedVoucher.from_dict(data)
+        assert restored.task_id == "task-abc-123"
+
+        # JSON dict
+        json_data = voucher.to_json_dict()
+        assert json_data["task_id"] == "task-abc-123"
+
+    def test_task_id_default_empty(self, eth_keypair, channel_id):
+        """Voucher without task_id should default to empty string."""
+        voucher = SignedVoucher.create(channel_id, 1, 100, eth_keypair.key.hex())
+        assert voucher.task_id == ""
+        # task_id omitted from dict when empty
+        data = voucher.to_dict()
+        assert "task_id" not in data
+
+    def test_task_id_roundtrip_missing(self, eth_keypair, channel_id):
+        """from_dict should handle missing task_id gracefully."""
+        voucher = SignedVoucher.create(channel_id, 1, 100, eth_keypair.key.hex())
+        data = voucher.to_dict()
+        data.pop("task_id", None)
+        restored = SignedVoucher.from_dict(data)
+        assert restored.task_id == ""

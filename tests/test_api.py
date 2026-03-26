@@ -73,12 +73,13 @@ class MockNode:
         channel.activate()
         return channel
 
-    async def pay(self, channel_id: bytes, amount: int):
+    async def pay(self, channel_id: bytes, amount: int, task_id: str = ""):
         return await self.channel_manager.send_payment(
             channel_id=channel_id,
             amount=amount,
             private_key=self.wallet.private_key,
             send_fn=AsyncMock(),
+            task_id=task_id,
         )
 
     async def close_channel(self, channel_id: bytes):

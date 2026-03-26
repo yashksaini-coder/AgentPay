@@ -112,7 +112,7 @@ class TestTwoPartyFlow:
             timestamp=v.timestamp,
             signature=v.signature,
         )
-        with pytest.raises(ValueError, match="Invalid voucher signature"):
+        with pytest.raises(ValueError, match="signature does not match"):
             await mgr_b.handle_payment_update(update)
 
     async def test_full_channel_depletion(self):
@@ -131,7 +131,7 @@ class TestTwoPartyFlow:
         assert mgr_a.get_channel(cid).remaining_balance == 0
 
         # Any further payment should fail
-        with pytest.raises(ChannelError, match="exceeds deposit"):
+        with pytest.raises(ChannelError, match="exceeds available balance"):
             await mgr_a.send_payment(cid, 1, wa.private_key, mock_send)
 
 
@@ -198,7 +198,7 @@ class TestBidirectionalChannels:
 
 
 class TestDisputeScenarios:
-    def test_dispute_from_active_then_settle(self):
+    def test_dispute_from_closing_then_settle_via_active(self):
         w = Wallet.generate()
         ch = PaymentChannel(
             channel_id=bytes(range(32)),
@@ -208,6 +208,7 @@ class TestDisputeScenarios:
         )
         ch.accept()
         ch.activate()
+        ch.request_close()
         ch.dispute()
         assert ch.state == ChannelState.DISPUTED
         ch.close_expiration = 0  # Expire challenge for test
@@ -245,6 +246,7 @@ class TestDisputeScenarios:
         )
         ch.accept()
         ch.activate()
+        ch.request_close()
         ch.dispute()
         v = SignedVoucher.create(cid, 1, 100, w.private_key)
         with pytest.raises(ChannelError, match="DISPUTED"):

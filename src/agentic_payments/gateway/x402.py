@@ -18,6 +18,10 @@ from enum import Enum
 from typing import Any
 
 import structlog
+from eth_account import Account
+from eth_account.messages import encode_defunct
+
+from agentic_payments.protocol.errors import PaymentErrorCode
 
 logger = structlog.get_logger(__name__)
 
@@ -195,6 +199,7 @@ class X402Gateway:
                 )
                 return AccessDecision.INSUFFICIENT, {
                     "error": "trust_score_too_low",
+                    "error_code": PaymentErrorCode.TRUST_BELOW_MINIMUM.name,
                     "required": resource.min_trust_score,
                     "actual": rep.trust_score,
                 }
@@ -206,6 +211,7 @@ class X402Gateway:
             )
             return AccessDecision.INSUFFICIENT, {
                 "error": "insufficient_payment",
+                "error_code": PaymentErrorCode.INSUFFICIENT_PAYMENT.name,
                 "required": resource.price,
                 "provided": proof.amount,
             }
@@ -219,7 +225,10 @@ class X402Gateway:
                 self._log_access(
                     path, proof.sender, AccessDecision.INVALID_PROOF, resource.price
                 )
-                return AccessDecision.INVALID_PROOF, {"error": "channel_not_found"}
+                return AccessDecision.INVALID_PROOF, {
+                    "error": "channel_not_found",
+                    "error_code": PaymentErrorCode.CHANNEL_NOT_FOUND.name,
+                }
 
             remaining = channel.total_deposit - channel.total_paid
             if remaining < resource.price:
@@ -228,6 +237,7 @@ class X402Gateway:
                 )
                 return AccessDecision.INSUFFICIENT, {
                     "error": "channel_balance_insufficient",
+                    "error_code": PaymentErrorCode.INSUFFICIENT_FUNDS.name,
                     "remaining": remaining,
                     "required": resource.price,
                 }
@@ -244,6 +254,105 @@ class X402Gateway:
             "granted": True,
             "path": path,
             "price_charged": resource.price,
+        }
+
+    def settle_oneshot(
+        self,
+        path: str,
+        sender: str,
+        amount: int,
+        signature: str = "",
+        task_id: str = "",
+        timestamp: int = 0,
+    ) -> tuple[AccessDecision, dict]:
+        """One-shot stateless x402 payment for occasional interactions.
+
+        Unlike payment channels (which require setup + teardown), one-shot
+        payments are a single pay-and-go transaction. Suitable for infrequent
+        peers or first-time interactions.
+
+        Args:
+            path: The gated resource path
+            sender: Sender ETH address
+            amount: Payment amount in wei
+            signature: Optional direct voucher signature
+            task_id: Optional work-request correlation ID
+            timestamp: Unix timestamp included in the signed message for replay protection
+
+        Returns:
+            (AccessDecision, metadata) tuple
+        """
+        resource = self._resources.get(path)
+        if resource is None:
+            return AccessDecision.GRANTED, {}
+
+        if amount < resource.price:
+            self._log_access(path, sender, AccessDecision.INSUFFICIENT, resource.price)
+            return AccessDecision.INSUFFICIENT, {
+                "error": "insufficient_payment",
+                "error_code": PaymentErrorCode.INSUFFICIENT_PAYMENT.name,
+                "required": resource.price,
+                "provided": amount,
+            }
+
+        # Verify EIP-191 signature if provided (proves sender owns the wallet)
+        if signature:
+            # Replay protection: require timestamp within 60-second window
+            if timestamp:
+                now = int(time.time())
+                if abs(now - timestamp) > 60:
+                    self._log_access(path, sender, AccessDecision.INVALID_PROOF, resource.price)
+                    return AccessDecision.INVALID_PROOF, {
+                        "error": "timestamp_expired",
+                        "error_code": PaymentErrorCode.INVALID_SIGNATURE.name,
+                        "detail": f"Timestamp {timestamp} is outside the 60-second window",
+                    }
+
+            try:
+                msg_text = f"x402:oneshot:{path}:{amount}:{sender}:{timestamp}"
+                signable = encode_defunct(text=msg_text)
+                recovered = Account.recover_message(signable, signature=bytes.fromhex(signature))
+                if recovered.lower() != sender.lower():
+                    self._log_access(path, sender, AccessDecision.INVALID_PROOF, resource.price)
+                    return AccessDecision.INVALID_PROOF, {
+                        "error": "signature_mismatch",
+                        "error_code": PaymentErrorCode.INVALID_SIGNATURE.name,
+                        "detail": "Recovered address does not match sender",
+                    }
+            except (ValueError, TypeError, Exception) as e:
+                self._log_access(path, sender, AccessDecision.INVALID_PROOF, resource.price)
+                return AccessDecision.INVALID_PROOF, {
+                    "error": "invalid_signature",
+                    "error_code": PaymentErrorCode.INVALID_SIGNATURE.name,
+                    "detail": str(e),
+                }
+
+        # Trust gate check
+        if resource.min_trust_score > 0 and self._reputation_tracker:
+            rep = self._reputation_tracker.get_reputation(sender)
+            if rep and rep.trust_score < resource.min_trust_score:
+                self._log_access(path, sender, AccessDecision.INSUFFICIENT, resource.price)
+                return AccessDecision.INSUFFICIENT, {
+                    "error": "trust_score_too_low",
+                    "error_code": PaymentErrorCode.TRUST_BELOW_MINIMUM.name,
+                    "required": resource.min_trust_score,
+                    "actual": rep.trust_score,
+                }
+
+        self._log_access(path, sender, AccessDecision.GRANTED, resource.price)
+        logger.info(
+            "oneshot_access_granted",
+            path=path,
+            sender=sender,
+            price=resource.price,
+            task_id=task_id or None,
+        )
+        return AccessDecision.GRANTED, {
+            "granted": True,
+            "path": path,
+            "price_charged": resource.price,
+            "payment_mode": "oneshot",
+            "task_id": task_id or None,
         }
 
     def get_access_log(self, limit: int = 100) -> list[dict]:

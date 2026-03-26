@@ -119,3 +119,43 @@ The settlement layer is chain-agnostic by design (`chain/protocols.py` defines `
 7. Settle on Ethereum, Algorand, or Filecoin
 
 Run `./scripts/demo.sh` for a 9-phase automated API demo, or `./scripts/live_test.sh` for comprehensive end-to-end verification.
+
+---
+
+## Cross-Ecosystem Alignment
+
+AgentPay aligns with emerging agentic payment standards beyond Filecoin:
+
+### libp2p-v4-swap-agents Alignment
+
+| Feature | libp2p-v4-swap-agents | AgentPay |
+|---------|----------------------|----------|
+| EIP-191 PeerId ↔ EOA binding | `"libp2p-v4-swap-agents:identity:{peer_id}"` signed proof | `"AgentPay:identity:{peer_id}"` via `identity/eip191.py` |
+| GossipSub peer scoring | Weighted scoring (time-in-mesh: 0.5, first-delivery: 1.0) | Same weights + reputation-wired `app_specific_score_fn` |
+| Dynamic fee rebates | Uniswap V4 hooks (0.30% → 0.20% after 5+ swaps) | Trust-based pricing discounts via `PricingEngine` |
+
+### Google a2a-x402 Alignment
+
+| Feature | a2a-x402 | AgentPay |
+|---------|---------|----------|
+| TaskId correlation | Every payment linked to specific work request | `task_id` field on vouchers and `/pay` endpoint |
+| Standardized error codes | `INSUFFICIENT_FUNDS`, `INVALID_SIGNATURE`, etc. | `PaymentErrorCode` enum with 6 code ranges (1000–1599) |
+| Payment schemes | `exact`, `escrow`, `streaming` | Payment channels (streaming) + one-shot `/gateway/pay-oneshot` (exact) |
+| x402 protocol | 402 Payment Required → PaymentPayload → SettleResponse | Bazaar-compatible x402 gateway with spec-compliant responses |
+
+### P2P-Federated-Learning Alignment
+
+| Feature | P2P-FL | AgentPay |
+|---------|--------|----------|
+| Role-based agents | Bootstrap, Client (coordinator), Trainer (compute) | `AgentRole` enum: coordinator, worker, data_provider, validator, gateway |
+| Work rounds | Coordinator distributes training rounds | `WorkRound` with task assignment and max_workers |
+| Same stack | py-libp2p + trio + GossipSub | py-libp2p + trio + GossipSub (validates tech choice) |
+
+### Google AP2 Protocol Comparison
+
+| Feature | AP2 | AgentPay |
+|---------|-----|----------|
+| Intent Mandates (spending limits) | Time-bounded authorization scopes | Wallet policies with per-tx and total limits |
+| Verifiable Digital Credentials | Cryptographic authorization proof | ERC-8004 identity + EIP-191 binding |
+| Enterprise partners | 60+ (Mastercard, PayPal, Amex) | Blockchain-native (different scope) |
+| **AgentPay advantages** | — | HTLC routing, SLA monitoring, dispute resolution, receipt chains, GossipSub peer scoring |

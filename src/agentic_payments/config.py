@@ -261,6 +261,29 @@ class DisputeConfig(BaseSettings):
     )
 
 
+class AgentConfig(BaseSettings):
+    """Agent runtime configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="AGENT_")
+
+    enabled: bool = Field(default=False, description="Enable autonomous agent runtime")
+    tick_interval: float = Field(
+        default=5.0, ge=0.1, description="Seconds between agent runtime ticks"
+    )
+    auto_negotiate: bool = Field(
+        default=True, description="Enable autonomous negotiation strategy"
+    )
+    max_price: int = Field(
+        default=0, ge=0, description="Max price to auto-accept (0 = no limit)"
+    )
+    min_trust_score: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Minimum trust score to engage"
+    )
+    executor_type: str = Field(
+        default="echo", description="Task executor type: echo or callback"
+    )
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -280,6 +303,7 @@ class Settings(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     pricing: PricingConfig = Field(default_factory=PricingConfig)
     dispute: DisputeConfig = Field(default_factory=DisputeConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
     chain_type: Literal["ethereum", "algorand", "filecoin"] = Field(
         default="ethereum", description="Primary chain for settlement"
     )

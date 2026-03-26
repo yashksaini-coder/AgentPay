@@ -309,7 +309,7 @@ account = Account.create()                # secp256k1
 eth_address = account.address             # 0x...
 ```
 
-This separation is intentional. libp2p identity is for networking (who you are on the P2P network), while the Ethereum wallet is for value transfer (who you are on the blockchain). They are linked by the node announcing both its PeerID and ETH address on the GossipSub discovery topic.
+This separation is intentional. libp2p identity is for networking (who you are on the P2P network), while the Ethereum wallet is for value transfer (who you are on the blockchain). They are linked cryptographically via EIP-191 identity binding (see Section 25) and announced on the GossipSub discovery topic.
 
 ---
 
@@ -660,7 +660,7 @@ Payment channels are ephemeral by nature. Agents restart, channels close, vouche
 
 ### Why two separate key systems?
 
-libp2p identity (Ed25519) and Ethereum wallet (secp256k1) serve different purposes and have different security requirements. Merging them would require either deriving one from the other (fragile) or using a non-standard curve for one system (incompatible). Keeping them separate is the standard approach used by projects like Filecoin.
+libp2p identity (Ed25519) and Ethereum wallet (secp256k1) serve different purposes and have different security requirements. Merging them would require either deriving one from the other (fragile) or using a non-standard curve for one system (incompatible). Keeping them separate is the standard approach used by projects like Filecoin. EIP-191 identity binding (Section 25) cryptographically proves the link between them.
 
 ### Why GossipSub for receipts?
 
@@ -669,3 +669,196 @@ Payment receipts on a pubsub topic create a transparent audit log without requir
 ### Why length-prefix framing over line-delimited?
 
 Binary messages (msgpack) can contain newlines and null bytes. Length-prefix framing with a 4-byte big-endian header is simple, unambiguous, and efficient. It also enables the reader to allocate the exact buffer size needed.
+
+---
+
+## 25. EIP-191 Identity Binding
+
+AgentPay cryptographically binds libp2p PeerIDs to Ethereum wallet addresses using EIP-191 signed messages. This proves that a given PeerId and ETH address belong to the same agent, matching the pattern used by [libp2p-v4-swap-agents](https://github.com/Patrick-Ehimen/libp2p-v4-swap-agents).
+
+### 25.1 Signing
+
+On startup, the agent signs a message binding its PeerId to its wallet:
+
+```
+message = "AgentPay:identity:{peer_id}"
+signature = EIP-191 personal_sign(message, eth_private_key)
+```
+
+The resulting `IdentityProof` contains `(peer_id, eth_address, signature)`.
+
+### 25.2 Verification
+
+When an identity proof is received (via GossipSub discovery announcements), the verifier:
+
+1. Reconstructs the message: `"AgentPay:identity:{proof.peer_id}"`
+2. Recovers the signer from the EIP-191 signature
+3. Checks that the recovered address matches `proof.eth_address`
+
+Verified proofs are cached in `_verified_identities` on the agent node. The `/identity` endpoint exposes `eip191_bound: true` and the count of verified peers.
+
+### 25.3 Implementation
+
+- `src/agentic_payments/identity/eip191.py` — `sign_identity()`, `verify_identity()`, `IdentityProof` dataclass
+- Identity proof is generated at startup in `AgentNode.__init__()` and broadcast on GossipSub
+- Incoming proofs are verified in `_handle_discovery_announce()`
+
+---
+
+## 26. TaskId Correlation on Vouchers
+
+Every payment voucher can include an optional `task_id` field that correlates the payment to a specific work request. This follows the pattern established by [Google's a2a-x402](https://github.com/google-agentic-commerce/a2a-x402) protocol.
+
+### 26.1 Wire Format
+
+The `PAYMENT_UPDATE` message now includes an optional `task_id` field:
+
+```python
+@dataclass
+class PaymentUpdate:
+    channel_id: bytes
+    nonce: int
+    amount: int
+    timestamp: int
+    signature: bytes
+    task_id: str = ""  # NEW: correlates to work request
+```
+
+### 26.2 API
+
+The `/pay` endpoint accepts an optional `task_id`:
+
+```bash
+curl -X POST http://127.0.0.1:8080/pay \
+  -H "Content-Type: application/json" \
+  -d '{"channel_id":"abcdef...","amount":100000,"task_id":"task-inference-001"}'
+```
+
+The `task_id` is stored on the `SignedVoucher` and included in the response. This enables:
+- Per-request settlement attestation
+- Idempotent payment retries
+- Audit trail linking payments to specific service invocations
+
+---
+
+## 27. Payment Error Code Taxonomy
+
+AgentPay uses standardized error codes matching [a2a-x402](https://github.com/google-agentic-commerce/a2a-x402) patterns, enabling programmatic error handling by agent clients.
+
+### 27.1 Error Code Ranges
+
+| Range | Category | Examples |
+|-------|----------|----------|
+| 1000–1099 | Channel errors | `CHANNEL_NOT_FOUND`, `CHANNEL_NOT_ACTIVE`, `CHANNEL_ALREADY_EXISTS` |
+| 1100–1199 | Payment errors | `INSUFFICIENT_FUNDS`, `INVALID_SIGNATURE`, `EXPIRED_PAYMENT`, `DUPLICATE_NONCE`, `AMOUNT_EXCEEDS_DEPOSIT` |
+| 1200–1299 | Identity errors | `UNKNOWN_PEER`, `IDENTITY_VERIFICATION_FAILED` |
+| 1300–1399 | Gateway errors | `RESOURCE_NOT_FOUND`, `PAYMENT_BELOW_PRICE`, `ACCESS_DENIED` |
+| 1400–1499 | Routing errors | `NO_ROUTE`, `HOP_LIMIT_EXCEEDED` |
+| 1500–1599 | Protocol errors | `UNSUPPORTED_MESSAGE`, `MALFORMED_PAYLOAD`, `TIMEOUT` |
+
+### 27.2 Error Response Format
+
+```json
+{
+  "error": "Channel not found",
+  "error_code": 1000,
+  "detail": "No channel with ID abcdef..."
+}
+```
+
+Errors are implemented as `PaymentError(Exception)` in `src/agentic_payments/protocol/errors.py` with automatic HTTP status code mapping.
+
+---
+
+## 28. GossipSub Peer Scoring
+
+AgentPay configures weighted peer scoring in GossipSub, following the pattern from [libp2p-v4-swap-agents](https://github.com/Patrick-Ehimen/libp2p-v4-swap-agents). This provides spam protection and preference for reliable peers.
+
+### 28.1 Score Parameters
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `time_in_mesh_weight` | 0.5 | Reward long-lived mesh membership |
+| `first_message_deliveries_weight` | 1.0 | Reward first-seen message delivery |
+| `gossip_threshold` | -200 | Score below which peers are dropped from mesh |
+| `graylist_threshold` | -400 | Score below which peers are fully excluded |
+
+### 28.2 App-Specific Scoring
+
+The `app_specific_score_fn` callback integrates with AgentPay's reputation system:
+
+```python
+def _app_score(peer_id: str) -> float:
+    rep = reputation_tracker.get_reputation(peer_id)
+    return rep.trust_score * 10.0 if rep else 0.0
+```
+
+This means peers with higher trust scores (based on payment history) get a scoring bonus in the gossip mesh, making them preferred relay nodes.
+
+---
+
+## 29. One-Shot x402 Payment Mode
+
+For occasional interactions where opening a payment channel is overkill, AgentPay supports direct stateless payments via the `POST /gateway/pay-oneshot` endpoint.
+
+### 29.1 Flow
+
+1. Client sends `{resource, amount, receiver, payer, signature}` to `/gateway/pay-oneshot`
+2. Gateway verifies the resource exists and the amount meets the price
+3. Gateway validates the EIP-191 signature over the payment payload
+4. On success, returns the settlement receipt
+
+### 29.2 Channel vs One-Shot
+
+| Aspect | Payment Channel | One-Shot |
+|--------|----------------|----------|
+| Setup cost | One-time channel open | None |
+| Per-payment cost | Near-zero (off-chain) | Per-request verification |
+| Best for | High-frequency peers | Occasional interactions |
+| State required | Channel lifecycle | Stateless |
+
+---
+
+## 30. Role-Based Agent Coordination
+
+AgentPay supports role-based multi-agent coordination, inspired by [P2P-Federated-Learning](https://github.com/lla-dane/P2P-Federated-Learning)'s bootstrap/client/trainer pattern.
+
+### 30.1 Agent Roles
+
+| Role | Description |
+|------|-------------|
+| `coordinator` | Creates work rounds, assigns tasks to workers |
+| `worker` | Executes tasks assigned by coordinators |
+| `data_provider` | Supplies data for processing |
+| `validator` | Validates results from workers |
+| `gateway` | Provides external API access |
+
+### 30.2 Work Rounds
+
+Coordinators create `WorkRound` objects that define a unit of work:
+
+```json
+{
+  "round_id": "round-1",
+  "coordinator_peer_id": "12D3KooW...",
+  "task_type": "inference",
+  "required_role": "worker",
+  "max_workers": 5,
+  "reward_per_worker": 1000,
+  "assigned_workers": []
+}
+```
+
+Workers are assigned to rounds up to `max_workers`. Duplicate assignments are rejected.
+
+### 30.3 API
+
+- `GET /role` — Current role assignment
+- `PUT /role` — Assign role: `{"role": "coordinator", "capabilities": ["llm-inference"]}`
+- `DELETE /role` — Clear role
+- `GET /work-rounds` — List work rounds (coordinator only)
+- `POST /work-rounds` — Create work round (coordinator only)
+
+### 30.4 Discovery Integration
+
+Agent roles are advertised in the `AgentCapability` model (optional `role` field), enabling capability-based discovery filtered by role.

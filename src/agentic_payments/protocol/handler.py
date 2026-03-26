@@ -13,6 +13,7 @@ from libp2p.network.stream.net_stream import NetStream
 
 from agentic_payments.payments.channel import ChannelError
 from agentic_payments.protocol.codec import read_message, write_message
+from agentic_payments.protocol.errors import PaymentError, PaymentErrorCode
 from agentic_payments.protocol.messages import (
     ErrorMessage,
     MessageType,
@@ -144,7 +145,8 @@ class PaymentProtocolHandler:
                 return await self._handle_negotiate(self._on_negotiate_reject, msg, remote_peer)
             case _:
                 return MessageType.ERROR, ErrorMessage(
-                    code=1, message=f"Unsupported message type: {msg_type}"
+                    code=int(PaymentErrorCode.UNSUPPORTED_MESSAGE),
+                    message=f"[{PaymentErrorCode.UNSUPPORTED_MESSAGE.name}] Unsupported message type: {msg_type}",
                 )
 
     async def _handle_open(self, msg: Any, remote_peer: str) -> tuple[MessageType, Any]:
@@ -162,6 +164,14 @@ class PaymentProtocolHandler:
                 nonce=msg.nonce,
                 status="accepted",
             )
+        except PaymentError as e:
+            logger.warning("open_rejected", error_code=e.code.name, error=str(e), remote_peer=remote_peer)
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=msg.channel_id,
+                nonce=msg.nonce,
+                status="rejected",
+                reason=f"[{e.code.name}] {e.detail}",
+            )
         except (ValueError, KeyError, ChannelError) as e:
             logger.warning("open_rejected", error=str(e), remote_peer=remote_peer)
             return MessageType.PAYMENT_ACK, PaymentAck(
@@ -176,7 +186,7 @@ class PaymentProtocolHandler:
                 channel_id=msg.channel_id,
                 nonce=msg.nonce,
                 status="rejected",
-                reason="Internal error",
+                reason=f"[{PaymentErrorCode.INTERNAL_ERROR.name}] Internal error",
             )
 
     async def _handle_update(self, msg: Any, remote_peer: str) -> tuple[MessageType, Any]:
@@ -187,6 +197,14 @@ class PaymentProtocolHandler:
                 channel_id=msg.channel_id,
                 nonce=msg.nonce,
                 status="accepted",
+            )
+        except PaymentError as e:
+            logger.warning("update_rejected", error_code=e.code.name, error=str(e), remote_peer=remote_peer)
+            return MessageType.PAYMENT_ACK, PaymentAck(
+                channel_id=msg.channel_id,
+                nonce=msg.nonce,
+                status="rejected",
+                reason=f"[{e.code.name}] {e.detail}",
             )
         except (ValueError, KeyError, ChannelError) as e:
             logger.warning("update_rejected", error=str(e), remote_peer=remote_peer)
@@ -202,7 +220,7 @@ class PaymentProtocolHandler:
                 channel_id=msg.channel_id,
                 nonce=msg.nonce,
                 status="rejected",
-                reason="Internal error",
+                reason=f"[{PaymentErrorCode.INTERNAL_ERROR.name}] Internal error",
             )
 
     async def _handle_close(self, msg: Any, remote_peer: str) -> tuple[MessageType, Any]:

@@ -10,6 +10,7 @@ import trio
 
 from agentic_payments.payments.channel import ChannelError, ChannelState, PaymentChannel
 from agentic_payments.payments.voucher import SignedVoucher
+from agentic_payments.protocol.errors import PaymentError, PaymentErrorCode
 from agentic_payments.protocol.messages import PaymentClose, PaymentOpen, PaymentUpdate
 
 if TYPE_CHECKING:
@@ -83,10 +84,10 @@ class ChannelManager:
     async def handle_open_request(self, msg: PaymentOpen, peer_id: str) -> PaymentChannel:
         """Handle an incoming channel open request from a peer."""
         if msg.channel_id in self.channels:
-            raise ValueError("Channel ID already exists")
+            raise PaymentError(PaymentErrorCode.CHANNEL_ALREADY_EXISTS, detail=f"Channel {msg.channel_id.hex()[:16]} already exists")
 
         if msg.total_deposit <= 0:
-            raise ValueError("Deposit must be positive")
+            raise PaymentError(PaymentErrorCode.CHANNEL_DEPOSIT_INVALID, detail="Deposit must be positive")
 
         channel = PaymentChannel(
             channel_id=msg.channel_id,
@@ -113,7 +114,7 @@ class ChannelManager:
         # Validate timestamp is recent to prevent replay of old vouchers
         now = int(time.time())
         if abs(msg.timestamp - now) > MAX_TIMESTAMP_SKEW:
-            raise ValueError(f"Voucher timestamp too skewed: {msg.timestamp} vs now {now}")
+            raise PaymentError(PaymentErrorCode.EXPIRED_PAYMENT, detail=f"Voucher timestamp too skewed: {msg.timestamp} vs now {now}")
 
         voucher = SignedVoucher(
             channel_id=msg.channel_id,
@@ -121,11 +122,12 @@ class ChannelManager:
             amount=msg.amount,
             timestamp=msg.timestamp,
             signature=msg.signature,
+            task_id=msg.task_id,
         )
 
         # Verify the voucher signature matches the channel sender
         if not voucher.verify(channel.sender):
-            raise ValueError("Invalid voucher signature")
+            raise PaymentError(PaymentErrorCode.INVALID_SIGNATURE, detail="Voucher signature does not match channel sender")
 
         channel.apply_voucher(voucher)
 
@@ -136,14 +138,22 @@ class ChannelManager:
         """
         channel = self.get_channel(msg.channel_id)
 
+        if channel.state != ChannelState.ACTIVE:
+            raise PaymentError(
+                PaymentErrorCode.CHANNEL_CLOSE_MISMATCH,
+                detail=f"Cannot close channel in state {channel.state.name}",
+            )
+
         # Verify close parameters match our known state
         if msg.final_nonce != channel.nonce:
-            raise ValueError(
-                f"Close nonce mismatch: got {msg.final_nonce}, expected {channel.nonce}"
+            raise PaymentError(
+                PaymentErrorCode.CHANNEL_CLOSE_MISMATCH,
+                detail=f"Close nonce mismatch: got {msg.final_nonce}, expected {channel.nonce}",
             )
         if msg.final_amount != channel.total_paid:
-            raise ValueError(
-                f"Close amount mismatch: got {msg.final_amount}, expected {channel.total_paid}"
+            raise PaymentError(
+                PaymentErrorCode.CHANNEL_CLOSE_MISMATCH,
+                detail=f"Close amount mismatch: got {msg.final_amount}, expected {channel.total_paid}",
             )
 
         if msg.cooperative:
@@ -163,6 +173,7 @@ class ChannelManager:
         amount: int,
         private_key: str,
         send_fn: Any,
+        task_id: str = "",
     ) -> SignedVoucher:
         """Create and send a payment voucher on a channel.
 
@@ -186,10 +197,11 @@ class ChannelManager:
             new_nonce = channel.nonce + 1
             new_total = channel.total_paid + amount
 
-            if new_total > channel.total_deposit:
+            if amount > channel.available_balance:
                 raise ChannelError(
-                    f"Voucher amount {new_total} exceeds deposit {channel.total_deposit} "
-                    f"(total_paid={channel.total_paid}, payment={amount})"
+                    f"Payment {amount} exceeds available balance {channel.available_balance} "
+                    f"(deposit={channel.total_deposit}, paid={channel.total_paid}, "
+                    f"htlc_locked={channel.pending_htlc_amount})"
                 )
 
             # Policy check before creating voucher
@@ -201,6 +213,7 @@ class ChannelManager:
                 nonce=new_nonce,
                 amount=new_total,
                 private_key=private_key,
+                task_id=task_id,
             )
 
             # Send first — if this fails, channel state is unchanged
@@ -211,6 +224,7 @@ class ChannelManager:
                     amount=voucher.amount,
                     timestamp=voucher.timestamp,
                     signature=voucher.signature,
+                    task_id=task_id,
                 )
             )
 

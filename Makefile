@@ -19,3 +19,6 @@ contracts-build:
 contracts-fmt:
 	cd contracts && forge fmt --check
 ci: lint fmt-check typecheck test frontend-lint frontend-build contracts-build contracts-fmt
+
+clean: 
+	rm -rf frontend/dist/ contracts/out/ dist/ .mypy_cache/ .ruff_cache/ .pytest_cache/

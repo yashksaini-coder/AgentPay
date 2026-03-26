@@ -468,7 +468,7 @@ class TestScaleCrossSigRejection:
                 timestamp=v.timestamp,
                 signature=v.signature,
             )
-            with pytest.raises(ValueError, match="Invalid voucher signature"):
+            with pytest.raises(ValueError, match="signature does not match"):
                 await r.manager.handle_payment_update(update)
 
 

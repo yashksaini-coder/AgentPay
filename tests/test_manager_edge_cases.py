@@ -144,7 +144,7 @@ class TestHandleOpenRequest:
             total_deposit=500_000,
         )
         await manager.handle_open_request(msg, "QmPeer1")
-        with pytest.raises(ValueError, match="Channel ID already exists"):
+        with pytest.raises(ValueError, match="already exists"):
             await manager.handle_open_request(msg, "QmPeer2")
 
     async def test_open_request_zero_deposit(self, manager):
@@ -263,7 +263,7 @@ class TestHandlePaymentUpdate:
             timestamp=v.timestamp,
             signature=v.signature,
         )
-        with pytest.raises(ValueError, match="Invalid voucher signature"):
+        with pytest.raises(ValueError, match="signature does not match"):
             await manager.handle_payment_update(msg)
 
     async def test_sequential_payment_updates(self, manager, wallet_a):
@@ -436,7 +436,7 @@ class TestSendPayment:
 
         mock_send = AsyncMock()
         # Cumulative amount will be 2000 > deposit 1000
-        with pytest.raises(ChannelError, match="exceeds deposit"):
+        with pytest.raises(ChannelError, match="exceeds available balance"):
             await mgr.send_payment(CID, 2000, wallet_a.private_key, mock_send)
 
     async def test_send_payment_unknown_channel(self, wallet_a):

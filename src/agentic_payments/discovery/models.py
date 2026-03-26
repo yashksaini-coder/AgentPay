@@ -13,13 +13,17 @@ class AgentCapability:
     service_type: str  # e.g. "llm-inference", "image-gen", "data-retrieval"
     price_per_call: int  # Wei per invocation
     description: str = ""
+    role: str = ""  # Agent role: "coordinator", "worker", "data_provider", "validator", "gateway"
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "service_type": self.service_type,
             "price_per_call": self.price_per_call,
             "description": self.description,
         }
+        if self.role:
+            d["role"] = self.role
+        return d
 
     @staticmethod
     def from_dict(d: dict) -> AgentCapability:
@@ -27,6 +31,7 @@ class AgentCapability:
             service_type=d["service_type"],
             price_per_call=d["price_per_call"],
             description=d.get("description", ""),
+            role=d.get("role", ""),
         )
 
 

@@ -47,9 +47,7 @@ contracts/lib/
 diagrams/
 
 # Internal docs (kept local, not tracked)
-docs/PRESENTATION-OUTLINE.md
-docs/VIDEO-SCRIPT.md
-docs/DEMO-WALKTHROUGH.md
+docs/PITCH.md
 
 # Data
 *.db

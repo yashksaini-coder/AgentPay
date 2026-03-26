@@ -133,3 +133,70 @@ def test_min_trust_score_gating():
     assert d["min_trust_score"] == 0.7
     r2 = GatedResource.from_dict(d)
     assert r2.min_trust_score == 0.7
+
+
+# ── One-Shot x402 Payment Tests ───────────────────────────────
+
+
+def test_oneshot_sufficient_payment():
+    """One-shot payment with sufficient amount should be granted."""
+    gw = X402Gateway()
+    gw.register_resource(GatedResource(path="/api/infer", price=1000))
+    decision, meta = gw.settle_oneshot(
+        path="/api/infer", sender="0x1", amount=1000
+    )
+    assert decision == AccessDecision.GRANTED
+    assert meta["payment_mode"] == "oneshot"
+    assert meta["price_charged"] == 1000
+
+
+def test_oneshot_insufficient_payment():
+    """One-shot payment with insufficient amount should be rejected."""
+    gw = X402Gateway()
+    gw.register_resource(GatedResource(path="/api/infer", price=1000))
+    decision, meta = gw.settle_oneshot(
+        path="/api/infer", sender="0x1", amount=500
+    )
+    assert decision == AccessDecision.INSUFFICIENT
+    assert meta["error"] == "insufficient_payment"
+
+
+def test_oneshot_ungated_resource():
+    """One-shot on a non-gated path should pass through."""
+    gw = X402Gateway()
+    decision, meta = gw.settle_oneshot(
+        path="/api/free", sender="0x1", amount=0
+    )
+    assert decision == AccessDecision.GRANTED
+
+
+def test_oneshot_with_task_id():
+    """One-shot payment should carry task_id for correlation."""
+    gw = X402Gateway()
+    gw.register_resource(GatedResource(path="/api/infer", price=1000))
+    decision, meta = gw.settle_oneshot(
+        path="/api/infer", sender="0x1", amount=1000, task_id="task-xyz"
+    )
+    assert decision == AccessDecision.GRANTED
+    assert meta["task_id"] == "task-xyz"
+
+
+def test_oneshot_logged():
+    """One-shot access attempts should appear in the access log."""
+    gw = X402Gateway()
+    gw.register_resource(GatedResource(path="/api/infer", price=1000))
+    gw.settle_oneshot(path="/api/infer", sender="0x1", amount=1000)
+    gw.settle_oneshot(path="/api/infer", sender="0x2", amount=100)
+    log = gw.get_access_log()
+    assert len(log) == 2
+    assert log[0]["decision"] == "granted"
+    assert log[1]["decision"] == "insufficient"
+
+
+def test_oneshot_error_codes():
+    """One-shot rejections should include standardized error codes."""
+    gw = X402Gateway()
+    gw.register_resource(GatedResource(path="/api/infer", price=1000))
+    _, meta = gw.settle_oneshot(path="/api/infer", sender="0x1", amount=100)
+    assert "error_code" in meta
+    assert meta["error_code"] == "INSUFFICIENT_PAYMENT"

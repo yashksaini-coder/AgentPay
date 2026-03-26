@@ -19,6 +19,8 @@ export interface Identity {
   eth_address: string | null;
   addrs: string[];
   connected_peers?: number;
+  eip191_bound?: boolean;
+  verified_peers?: number;
 }
 
 export interface Peer {
@@ -48,6 +50,7 @@ export interface Voucher {
   amount: number;
   timestamp: number;
   signature: string;
+  task_id?: string;
 }
 
 export interface Balance {
@@ -261,6 +264,41 @@ export interface StorageStatus {
   api_url?: string;
 }
 
+// ---------- New: Roles, Work Rounds, One-Shot, Error Codes ----------
+
+export type AgentRoleType = "coordinator" | "worker" | "data_provider" | "validator" | "gateway";
+
+export interface RoleAssignment {
+  role: AgentRoleType;
+  capabilities?: string[];
+  max_concurrent_tasks?: number;
+}
+
+export interface WorkRound {
+  round_id: string;
+  coordinator_peer_id: string;
+  task_type: string;
+  required_role?: AgentRoleType;
+  max_workers?: number;
+  reward_per_worker?: number;
+  assigned_workers: string[];
+}
+
+export interface OneshotPaymentResult {
+  status: string;
+  resource: string;
+  amount: number;
+  receiver: string;
+  payer: string;
+  settled_at: number;
+}
+
+export interface PaymentErrorResponse {
+  error: string;
+  error_code: number;
+  detail?: string;
+}
+
 // ---------- API calls (parameterized by base URL) ----------
 
 export function createApi(base: string = DEFAULT_API) {
@@ -283,10 +321,10 @@ export function createApi(base: string = DEFAULT_API) {
       }),
     closeChannel: (id: string) =>
       fetchApi<{ channel: Channel }>(base, `/channels/${id}/close`, { method: "POST" }),
-    sendPayment: (channelId: string, amount: number) =>
+    sendPayment: (channelId: string, amount: number, taskId?: string) =>
       fetchApi<{ voucher: Voucher }>(base, "/pay", {
         method: "POST",
-        body: JSON.stringify({ channel_id: channelId, amount }),
+        body: JSON.stringify({ channel_id: channelId, amount, ...(taskId ? { task_id: taskId } : {}) }),
       }),
     routePayment: (destination: string, amount: number, knownChannels?: { channel_id: string; peer_a: string; peer_b: string; capacity: number }[]) =>
       fetchApi<{ payment: RoutedPayment }>(base, "/route-pay", {
@@ -400,6 +438,30 @@ export function createApi(base: string = DEFAULT_API) {
 
     // IPFS Storage
     getStorageStatus: () => fetchApi<StorageStatus>(base, "/storage/status"),
+
+    // Roles
+    getRole: () => fetchApi<{ role: RoleAssignment | null }>(base, "/role"),
+    setRole: (role: AgentRoleType, capabilities?: string[], maxConcurrentTasks?: number) =>
+      fetchApi<{ role: RoleAssignment }>(base, "/role", {
+        method: "PUT",
+        body: JSON.stringify({ role, capabilities, max_concurrent_tasks: maxConcurrentTasks }),
+      }),
+    clearRole: () => fetchApi<{ status: string }>(base, "/role", { method: "DELETE" }),
+
+    // Work Rounds
+    getWorkRounds: () => fetchApi<{ work_rounds: WorkRound[]; count: number }>(base, "/work-rounds"),
+    createWorkRound: (roundId: string, taskType: string, rewardPerWorker?: number, maxWorkers?: number) =>
+      fetchApi<{ work_round: WorkRound }>(base, "/work-rounds", {
+        method: "POST",
+        body: JSON.stringify({ round_id: roundId, task_type: taskType, reward_per_worker: rewardPerWorker, max_workers: maxWorkers }),
+      }),
+
+    // One-Shot Payment
+    payOneshot: (resource: string, amount: number, receiver: string, payer?: string, signature?: string) =>
+      fetchApi<OneshotPaymentResult>(base, "/gateway/pay-oneshot", {
+        method: "POST",
+        body: JSON.stringify({ resource, amount, receiver, payer, signature }),
+      }),
   };
 }
 

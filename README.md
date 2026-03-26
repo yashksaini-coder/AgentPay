@@ -27,11 +27,11 @@ Agents discover each other via **mDNS**, negotiate service terms over **libp2p s
 AgentPay is structured as a modular agent runtime with six layers:
 
 - **Networking** — [py-libp2p](https://github.com/libp2p/py-libp2p) 0.6.0 with TCP/WebSocket transports, Noise encryption, Yamux multiplexing, mDNS discovery, and GossipSub pubsub
-- **Wire Protocol** — 13 message types over length-prefixed msgpack streams (`/agentic-payments/1.0.0`), covering payments, HTLCs, negotiations, and announcements
-- **Payment Channels** — Filecoin-style cumulative vouchers with ECDSA signatures, HTLC multi-hop routing via reputation-weighted BFS, and a 6-state channel lifecycle
+- **Wire Protocol** — 13 message types over length-prefixed msgpack streams (`/agentic-payments/1.0.0`), covering payments, HTLCs, negotiations, and announcements. TaskId correlation on vouchers for per-request settlement attestation
+- **Payment Channels** — Filecoin-style cumulative vouchers with ECDSA signatures and task correlation, HTLC multi-hop routing via reputation-weighted BFS, one-shot x402 stateless payments, and a 6-state channel lifecycle
 - **Settlement** — Tri-chain: **Ethereum** (Solidity `PaymentChannel.sol`), **Algorand** (ARC-4 + box storage), and **Filecoin FEVM** (same contract on FEVM with f4 address support) — selectable at startup
-- **Identity** — [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) on-chain agent registration (ERC-721 identity token), reputation sync, and discovery fallback
-- **Trust Layer** — Reputation scoring, SLA monitoring, dynamic pricing engine, dispute detection, wallet policies, and hash-chained signed receipt audit trails
+- **Identity** — [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) on-chain agent registration (ERC-721 identity token), EIP-191 PeerId-to-wallet cryptographic binding, reputation sync, and discovery fallback
+- **Trust Layer** — Reputation scoring, GossipSub peer scoring (time-in-mesh, first-delivery, app-specific weights), SLA monitoring, dynamic pricing engine, dispute detection, wallet policies, standardized payment error codes, and hash-chained signed receipt audit trails
 - **Storage** — IPFS content-addressed pinning for receipts and capabilities, with CID-based retrieval and GossipSub broadcast
 - **Interfaces** — Quart-Trio REST API (~50 endpoints), Typer CLI (~50 commands), and a Next.js 15 real-time dashboard
 
@@ -122,7 +122,7 @@ agentpay pricing quote --service inference                         # Dynamic pri
 
 ## REST API
 
-~40 JSON endpoints across 8 groups. CORS enabled. Default: `http://127.0.0.1:8080`
+~50 JSON endpoints across 10 groups. CORS enabled. Default: `http://127.0.0.1:8080`
 
 | Group | Endpoints | Description |
 |-------|-----------|-------------|
@@ -133,19 +133,21 @@ agentpay pricing quote --service inference                         # Dynamic pri
 | **Pricing** | `/pricing/quote` `/pricing/config` | Dynamic price quotes with trust discounts and congestion premiums |
 | **SLA** | `/sla/violations` `/sla/channels` | Per-channel latency/error-rate monitoring, violation detection |
 | **Disputes** | `/disputes` `/disputes/scan` `/channels/:id/dispute` | Stale voucher detection, dispute filing and resolution |
-| **Gateway** | `/gateway/resources` `/gateway/register` `/gateway/access` `/gateway/log` | x402 payment-gated resource access with verification |
+| **Gateway** | `/gateway/resources` `/gateway/register` `/gateway/access` `/gateway/log` `/gateway/pay-oneshot` | x402 payment-gated resource access, one-shot stateless payments |
+| **Roles** | `/role` | Agent role assignment (coordinator, worker, data_provider, validator, gateway) |
+| **Work Rounds** | `/work-rounds` | Coordinator-managed task distribution and worker assignment |
 
 ## Development
 
 ```bash
 make ci            # Run full CI pipeline locally (lint + format + typecheck + test + frontend + contracts)
-make test          # 590 tests
+make test          # 630 tests
 make lint          # ruff check
 make fmt           # ruff format (auto-fix)
 make typecheck     # mypy
 ```
 
-Tests cover the protocol codec, channel state machine, voucher cryptography, REST API, Algorand settlement, SLA monitoring, dynamic pricing, disputes, reputation, multi-hop routing, and full integration flows.
+Tests cover the protocol codec, channel state machine, voucher cryptography, REST API, Algorand settlement, SLA monitoring, dynamic pricing, disputes, reputation, multi-hop routing, EIP-191 identity binding, payment error codes, role-based coordination, and full integration flows.
 
 ## Contributing
 

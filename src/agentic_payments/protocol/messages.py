@@ -65,6 +65,7 @@ class PaymentUpdate:
     amount: int  # Cumulative wei
     timestamp: int = field(default_factory=lambda: int(time.time()))
     signature: bytes = b""
+    task_id: str = ""  # Optional: correlate payment to a specific work request
 
 
 @dataclass
@@ -201,6 +202,7 @@ _EXPECTED_FIELDS: dict[MessageType, set[str]] = {
         "amount",
         "timestamp",
         "signature",
+        "task_id",
     },
     MessageType.PAYMENT_CLOSE: {
         "channel_id",
@@ -360,6 +362,15 @@ def _validate_wire_data(msg_type: MessageType, data: dict[str, Any]) -> dict[str
     elif msg_type == MessageType.NEGOTIATE_REJECT:
         if "negotiation_id" not in filtered:
             raise ValueError("Missing required field: negotiation_id")
+
+    elif msg_type == MessageType.ERROR:
+        for req in ("code", "message"):
+            if req not in filtered:
+                raise ValueError(f"Missing required field: {req}")
+        if not isinstance(filtered["code"], int):
+            raise ValueError("code must be an integer")
+        if not isinstance(filtered["message"], str):
+            raise ValueError("message must be a string")
 
     return filtered
 

@@ -26,6 +26,7 @@ class SignedVoucher:
     amount: int  # Cumulative wei (not incremental)
     timestamp: int  # Unix timestamp
     signature: bytes  # ECDSA signature over the voucher hash
+    task_id: str = ""  # Optional: correlate payment to a specific work request
 
     def __post_init__(self) -> None:
         """Validate voucher fields at construction time."""
@@ -46,6 +47,7 @@ class SignedVoucher:
         nonce: int,
         amount: int,
         private_key: str,
+        task_id: str = "",
     ) -> SignedVoucher:
         """Create and sign a new voucher."""
         ts = int(time.time())
@@ -58,6 +60,7 @@ class SignedVoucher:
             amount=amount,
             timestamp=ts,
             signature=signed.signature,
+            task_id=task_id,
         )
 
     def verify(self, expected_signer: str) -> bool:
@@ -76,36 +79,52 @@ class SignedVoucher:
 
     def to_dict(self) -> dict:
         """Serialize to dict for wire transmission (msgpack-compatible, raw bytes)."""
-        return {
+        d = {
             "channel_id": self.channel_id,
             "nonce": self.nonce,
             "amount": self.amount,
             "timestamp": self.timestamp,
             "signature": self.signature,
         }
+        if self.task_id:
+            d["task_id"] = self.task_id
+        return d
 
     def to_json_dict(self) -> dict:
         """Serialize to JSON-safe dict (hex-encoded bytes)."""
-        return {
+        d = {
             "channel_id": self.channel_id.hex(),
             "nonce": self.nonce,
             "amount": self.amount,
             "timestamp": self.timestamp,
             "signature": self.signature.hex(),
         }
+        if self.task_id:
+            d["task_id"] = self.task_id
+        return d
 
     @staticmethod
     def from_dict(data: dict) -> SignedVoucher:
-        """Deserialize from dict with type validation."""
+        """Deserialize from dict with type validation.
+
+        Handles both raw bytes (from msgpack) and hex strings (from JSON).
+        """
         for key in ("channel_id", "nonce", "amount", "timestamp", "signature"):
             if key not in data:
                 raise ValueError(f"Missing required voucher field: {key}")
+        channel_id = data["channel_id"]
+        if isinstance(channel_id, str):
+            channel_id = bytes.fromhex(channel_id)
+        signature = data["signature"]
+        if isinstance(signature, str):
+            signature = bytes.fromhex(signature)
         return SignedVoucher(
-            channel_id=data["channel_id"],
+            channel_id=channel_id,
             nonce=int(data["nonce"]),
             amount=int(data["amount"]),
             timestamp=int(data["timestamp"]),
-            signature=data["signature"],
+            signature=signature,
+            task_id=data.get("task_id", ""),
         )
 
 

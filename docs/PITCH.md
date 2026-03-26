@@ -141,5 +141,4 @@ Agent A offloads GPU inference to Agent B, paying per-token generated. SLA monit
 - **Repository**: [github.com/yashksaini-coder/AgentPay](https://github.com/yashksaini-coder/AgentPay)
 - **Architecture**: [docs/ARCHITECTURE.md](ARCHITECTURE.md)
 - **CLI Reference**: [docs/COMMANDS.md](COMMANDS.md)
-- **Demo Walkthrough**: [docs/DEMO-WALKTHROUGH.md](DEMO-WALKTHROUGH.md)
-- **ARIA Proposal**: [docs/ARIA-PROPOSAL.md](ARIA-PROPOSAL.md)
+- **Ecosystem Alignment**: [docs/ECOSYSTEM-ALIGNMENT.md](ECOSYSTEM-ALIGNMENT.md)

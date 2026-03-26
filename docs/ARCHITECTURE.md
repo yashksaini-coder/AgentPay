@@ -11,7 +11,7 @@ This system implements **off-chain payment channels** between autonomous AI agen
 The core insight is that agent-to-agent micropayments need sub-second latency and near-zero marginal cost per transaction. On-chain transactions are too slow and expensive for per-request payments. Payment channels solve this by moving the payment loop off-chain while preserving the security guarantees of the underlying blockchain.
 
 <div align="center">
-  <img src="images/system-architecture.png" alt="System Architecture" width="800" />
+  <img src="../images/system-architecture.png" alt="System Architecture" width="800" />
   <br />
   <em>System Architecture — Agent nodes, libp2p networking, and Ethereum settlement</em>
 </div>
@@ -124,7 +124,7 @@ The handler runs a read loop on each incoming stream. Each message is dispatched
 ### 4.1 Channel State Machine
 
 <div align="center">
-  <img src="images/state-machine.png" alt="Payment Channel State Machine" width="700" />
+  <img src="../images/state-machine.png" alt="Payment Channel State Machine" width="700" />
   <br />
   <em>Payment Channel State Machine — lifecycle of a single payment channel</em>
 </div>
@@ -240,7 +240,7 @@ Both use EIP-191 `personal_sign` format (`\x19Ethereum Signed Message:\n32` pref
 ## 6. Payment Flow (End-to-End)
 
 <div align="center">
-  <img src="images/payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
+  <img src="../images/payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
   <br />
   <em>Payment Channel Lifecycle — open, pay, close, settle</em>
 </div>
@@ -357,7 +357,7 @@ CREATE TABLE vouchers (
 The entire system runs on **trio**, not asyncio. This is a hard requirement from py-libp2p.
 
 <div align="center">
-  <img src="images/e2e-code-flow.png" alt="End-to-End Code Flow" width="800" />
+  <img src="../images/e2e-code-flow.png" alt="End-to-End Code Flow" width="800" />
   <br />
   <em>Node startup sequence and request flow</em>
 </div>
@@ -579,21 +579,21 @@ Chain selection is configured via `chain_type: "ethereum" | "algorand" | "fileco
 
 ## 22. Diagrams
 
-Architecture diagrams are in [`docs/images/`](images/):
+Architecture diagrams are in [`images/`](../images/):
 
 | Diagram | Description |
 |---------|-------------|
-| [System Architecture](images/system-architecture.png) | Full system with all subsystems, tri-chain settlement, GossipSub topics |
-| [Payment Channel Lifecycle](images/payment-channel-lifecycle.png) | 8-step sequence: open, payments, close, settle |
-| [Channel State Machine](images/state-machine.png) | 6-state lifecycle: PROPOSED → ACTIVE → SETTLED |
-| [Negotiation + Payment Flow](images/negotiation-flow.png) | Full flow: discovery → negotiate → open → pay → close with SLA tracking |
-| [Trust Architecture](images/trust-architecture.png) | Reputation, SLA, disputes, policies, pricing interactions |
-| [Module Architecture](images/module-architecture.png) | Code module dependencies across 5 layers |
-| [Wire Protocol](images/wire-protocol.png) | All 13 message types with fields, framing format, and message flow |
-| [HTLC Multi-Hop Routing](images/htlc-routing.png) | Multi-hop payment via intermediaries with BFS pathfinding |
-| [ERC-8004 Identity Flow](images/erc8004-identity-flow.png) | Agent registration, identity bridge, reputation sync |
-| [IPFS Storage Flow](images/ipfs-storage-flow.png) | Receipt pinning, CID broadcast, retrieval and verification |
-| [End-to-End Code Flow](images/e2e-code-flow.png) | CLI → node init → libp2p → payment → receipt → settlement |
+| [System Architecture](../images/system-architecture.png) | Full system with all subsystems, tri-chain settlement, GossipSub topics |
+| [Payment Channel Lifecycle](../images/payment-channel-lifecycle.png) | 8-step sequence: open, payments, close, settle |
+| [Channel State Machine](../images/state-machine.png) | 6-state lifecycle: PROPOSED → ACTIVE → SETTLED |
+| [Negotiation + Payment Flow](../images/negotiation-flow.png) | Full flow: discovery → negotiate → open → pay → close with SLA tracking |
+| [Trust Architecture](../images/trust-architecture.png) | Reputation, SLA, disputes, policies, pricing interactions |
+| [Module Architecture](../images/module-architecture.png) | Code module dependencies across 5 layers |
+| [Wire Protocol](../images/wire-protocol.png) | All 13 message types with fields, framing format, and message flow |
+| [HTLC Multi-Hop Routing](../images/htlc-routing.png) | Multi-hop payment via intermediaries with BFS pathfinding |
+| [ERC-8004 Identity Flow](../images/erc8004-identity-flow.png) | Agent registration, identity bridge, reputation sync |
+| [IPFS Storage Flow](../images/ipfs-storage-flow.png) | Receipt pinning, CID broadcast, retrieval and verification |
+| [End-to-End Code Flow](../images/e2e-code-flow.png) | CLI → node init → libp2p → payment → receipt → settlement |
 
 ---
 
@@ -602,7 +602,7 @@ Architecture diagrams are in [`docs/images/`](images/):
 AgentPay supports the [ERC-8004 "Trustless Agents"](https://eips.ethereum.org/EIPS/eip-8004) standard for on-chain agent identity and reputation.
 
 <div align="center">
-  <img src="images/erc8004-identity-flow.png" alt="ERC-8004 Identity Flow" width="700" />
+  <img src="../images/erc8004-identity-flow.png" alt="ERC-8004 Identity Flow" width="700" />
 </div>
 
 ### 23.1 Identity Bridge

@@ -19,7 +19,7 @@
 Agents discover each other via **mDNS**, negotiate service terms over **libp2p streams**, exchange **Filecoin-style signed payment vouchers** off-chain, and settle on **Ethereum**, **Algorand**, or **Filecoin FEVM**. Built for the [Filecoin Agents](https://filecoin.cloud/agents) ecosystem and the [ARIA Scaling Trust](https://www.aria.org.uk/programme/scaling-trust/) programme.
 
 <div align="center">
-  <img src="docs/images/system-architecture.png" alt="System Architecture" width="800" />
+  <img src="images/system-architecture.png" alt="System Architecture" width="800" />
 </div>
 
 ## Architecture
@@ -36,7 +36,7 @@ AgentPay is structured as a modular agent runtime with six layers:
 - **Interfaces** — Quart-Trio REST API (~50 endpoints), Typer CLI (~50 commands), and a Next.js 15 real-time dashboard
 
 <div align="center">
-  <img src="docs/images/module-architecture.png" alt="Module Architecture" width="800" />
+  <img src="images/module-architecture.png" alt="Module Architecture" width="800" />
   <br />
   <em>Module dependency map — interface, core, network, business, trust, and settlement layers</em>
 </div>
@@ -58,7 +58,7 @@ AgentPay is structured as a modular agent runtime with six layers:
 uv sync --group dev
 
 # Start agents + dashboard (recommended)
-./scripts/dev.sh              # 5 agents + frontend at localhost:3000
+./scripts/dev.sh              # 2 agents + frontend at localhost:3000
 ./scripts/dev.sh --agents 3   # 3 agents
 
 # Or start manually
@@ -100,7 +100,7 @@ The Next.js dashboard at `localhost:3000` provides a real-time multi-agent netwo
 | **Monitoring** | SLA violations, dispute scanning, dynamic pricing quotes, live event feed. |
 
 <div align="center">
-  <img src="docs/images/payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
+  <img src="images/payment-channel-lifecycle.png" alt="Payment Channel Lifecycle" width="700" />
   <br />
   <em>Payment channel lifecycle — open, pay, close, settle</em>
 </div>
@@ -141,7 +141,7 @@ agentpay pricing quote --service inference                         # Dynamic pri
 
 ```bash
 make ci            # Run full CI pipeline locally (lint + format + typecheck + test + frontend + contracts)
-make test          # 630 tests
+make test          # 680 tests
 make lint          # ruff check
 make fmt           # ruff format (auto-fix)
 make typecheck     # mypy

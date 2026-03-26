@@ -47,6 +47,7 @@ All commands are run with `uv run agentpay` (or `agentpay` if installed globally
 | `agentpay storage list` | List pinned IPFS objects |
 | `agentpay sla` | Show SLA violations summary |
 | `agentpay chain` | Show chain type and settlement info |
+| `agentpay simulate` | Run a payment simulation across multiple agents |
 
 ---
 
@@ -75,6 +76,8 @@ Usage: agentpay start [OPTIONS]
 | `--erc8004-reputation` | TEXT | | ERC-8004 Reputation Registry contract address |
 | `--log-level` | TEXT | `INFO` | Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL |
 | `--identity-path` | PATH | `~/.agentic-payments/identity.key` | Path to Ed25519 identity key file |
+| `--agent-enabled` | BOOL | `false` | Enable autonomous agent runtime (`--no-agent-enabled` to disable) |
+| `--agent-tick` | FLOAT | `5.0` | Agent runtime tick interval in seconds |
 
 ### Examples
 
@@ -94,6 +97,9 @@ uv run agentpay start --log-level DEBUG
 
 # Connect to a remote Ethereum RPC
 uv run agentpay start --eth-rpc https://mainnet.infura.io/v3/YOUR_KEY
+
+# Start with agent runtime enabled (autonomous task execution)
+uv run agentpay start --agent-enabled --agent-tick 2
 ```
 
 ### What happens on start
@@ -482,7 +488,7 @@ The REST API is started alongside the node on `--api-port`. All endpoints return
 | GET | `/channels/:id` | Single channel by hex ID |
 | POST | `/channels` | Open a payment channel |
 | POST | `/channels/:id/close` | Close a channel cooperatively |
-| POST | `/pay` | Send a micropayment voucher |
+| POST | `/pay` | Send a micropayment voucher (supports `task_id` correlation) |
 | GET | `/balance` | Aggregated balance |
 | GET | `/graph` | Network topology graph |
 | POST | `/route` | Compute a multi-hop route to a peer |
@@ -553,6 +559,17 @@ The REST API is started alongside the node on `--api-port`. All endpoints return
 | POST | `/gateway/register` | Register a gated resource |
 | POST | `/gateway/access` | Verify payment and grant access (x402 flow) |
 | GET | `/gateway/log` | Access audit log |
+| POST | `/gateway/pay-oneshot` | One-shot x402 stateless payment (no channel required) |
+
+### Roles & Work Rounds
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/role` | Get current agent role assignment |
+| PUT | `/role` | Assign a role to this agent (coordinator, worker, data_provider, validator, gateway) |
+| DELETE | `/role` | Clear the agent's role assignment |
+| GET | `/work-rounds` | List all work rounds (coordinator only) |
+| POST | `/work-rounds` | Create a new work round (coordinator only) |
 
 ### ERC-8004 Identity
 
@@ -572,6 +589,18 @@ The REST API is started alongside the node on `--api-port`. All endpoints return
 | GET | `/storage/get/:cid` | Retrieve content by CID |
 | POST | `/storage/receipts/:channel_id/pin` | Pin receipt chain to IPFS |
 | GET | `/storage/pins` | List pinned objects |
+
+### Agent Runtime
+
+Requires `--agent-enabled` on `agentpay start`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/agent/status` | Agent runtime status (enabled, running, tick interval, task count) |
+| GET | `/agent/tasks` | List all tasks |
+| POST | `/agent/tasks` | Submit a new task (`{"description":"...","amount":N}`) |
+| GET | `/agent/tasks/:task_id` | Get task details by ID |
+| POST | `/agent/execute` | Execute a task (`{"task_id":"..."}`) |
 
 ### curl Examples
 
@@ -596,16 +625,44 @@ curl -X POST http://127.0.0.1:8080/channels \
   -H "Content-Type: application/json" \
   -d '{"peer_id":"12D3KooW...","receiver":"0xAbC...","deposit":1000000000000000000}'
 
-# Send a payment
+# Send a payment (with optional task_id for work-request correlation)
 curl -X POST http://127.0.0.1:8080/pay \
   -H "Content-Type: application/json" \
-  -d '{"channel_id":"a1b2c3d4...","amount":100000000000000}'
+  -d '{"channel_id":"a1b2c3d4...","amount":100000000000000,"task_id":"task-inference-001"}'
+
+# One-shot x402 payment (no channel required)
+curl -X POST http://127.0.0.1:8080/gateway/pay-oneshot \
+  -H "Content-Type: application/json" \
+  -d '{"path":"/api/v1/inference","amount":1000,"sender":"0xAbC..."}'
 
 # Close a channel
 curl -X POST http://127.0.0.1:8080/channels/a1b2c3d4.../close
 
 # Check balance
 curl http://127.0.0.1:8080/balance
+
+# Assign agent role
+curl -X PUT http://127.0.0.1:8080/role \
+  -H "Content-Type: application/json" \
+  -d '{"role":"coordinator","capabilities":["llm-inference"]}'
+
+# Create a work round (coordinator only)
+curl -X POST http://127.0.0.1:8080/work-rounds \
+  -H "Content-Type: application/json" \
+  -d '{"round_id":"round-1","task_type":"inference","reward_per_worker":1000,"max_workers":5}'
+
+# Agent runtime status (requires --agent-enabled)
+curl http://127.0.0.1:8080/agent/status
+
+# Submit a task
+curl -X POST http://127.0.0.1:8080/agent/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"description":"Analyze market data","amount":5000}'
+
+# Execute a task
+curl -X POST http://127.0.0.1:8080/agent/execute \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<TASK_ID>"}'
 ```
 
 ---
@@ -644,56 +701,6 @@ The dashboard has three areas:
 5. **Negotiate**: Use the Actions tab to propose service terms between agents
 6. **Identity**: Check the Identity tab to view ERC-8004 registration status
 
----
-
-## Quick Start
-
-```bash
-# Start multi-agent network + dashboard
-./scripts/dev.sh --agents 3
-
-# Or start manually
-uv run agentpay start --port 9000 --api-port 8080
-uv run agentpay start --port 9100 --ws-port 9101 --api-port 8081 \
-  --identity-path ~/.agentic-payments/identity2.key
-
-# Dashboard
-cd frontend && npm install && npm run dev
-# → http://localhost:3000
-```
-
-## Live End-to-End Testing
-
-```bash
-# Deploy contracts to local Anvil + test all features
-./scripts/deploy_local.sh
-source .env.local
-./scripts/live_test.sh
-```
-   - **"Agent A -> Agent B"** means Agent A is the sender (payer)
-   - **"Agent B -> Agent A"** means Agent B is the sender
-3. Enter the deposit amount in wei (e.g., `1000000000000000000` for 1 ETH)
-4. Click **"Open Channel"**
-5. On success, a green confirmation message appears with the channel ID
-6. The channel appears in the sender's card under "Channels" with an **ACTIVE** badge
-
-#### Step 3: Send payments
-
-1. Click the **"Send Payment"** tab in the center panel
-2. Select **"Agent A"** or **"Agent B"** as the sender
-3. Select the active channel from the dropdown (shows channel ID + remaining balance)
-4. Enter the payment amount in wei (e.g., `100000000000000` for 0.0001 ETH)
-5. Click **"Send Payment"**
-6. On success, a green message shows the voucher nonce and cumulative amount
-7. The channel balance updates automatically in the agent card
-
-#### Step 4: Monitor state
-
-- All data refreshes automatically every **4 seconds**
-- Channel state badges update in real time: PROPOSED, OPEN, **ACTIVE**, CLOSING, SETTLED
-- Balance stats (deposited / paid / remaining) update after each payment
-- New peers appear in the "Discovered Peers" section when found via mDNS
-
 ### Port configuration
 
 By default the dashboard connects to:
@@ -706,12 +713,6 @@ By default the dashboard connects to:
 To use custom ports, set environment variables before starting the frontend:
 
 ```bash
-NEXT_PUBLIC_AGENT_A_PORT=8080 NEXT_PUBLIC_AGENT_B_PORT=8081 npm run dev
-```
-
-Or for non-standard setups:
-
-```bash
 NEXT_PUBLIC_AGENT_A_PORT=9080 NEXT_PUBLIC_AGENT_B_PORT=9081 npm run dev
 ```
 
@@ -719,68 +720,8 @@ NEXT_PUBLIC_AGENT_A_PORT=9080 NEXT_PUBLIC_AGENT_B_PORT=9081 npm run dev
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| Both cards show "Offline" | Agents not running | Start both agents in separate terminals |
-| One card shows "Offline" | Wrong port or agent crashed | Check the agent's terminal for errors |
+| Both cards show "Offline" | Agents not running | Run `./scripts/dev.sh` first |
 | "Node unreachable" error | API port mismatch | Verify `--api-port` matches dashboard config |
-| "API error: ..." | Node is running but returned an error | Check the agent's terminal logs |
-| Channel open fails | Agents haven't discovered each other | Wait ~10 seconds for mDNS, or both agents must be on the same LAN |
-| CORS error in browser console | Frontend origin not in allowlist | Frontend must run on `localhost:3000` or `127.0.0.1:3000` |
-| Port 3000 already in use | Another dev server running | Kill it: `lsof -i :3000` then `kill <PID>`, or use `npx kill-port 3000` |
-
----
-
-## Common Workflows
-
-### Two-agent local test
-
-```bash
-# Terminal 1: Start Agent A
-uv run agentpay start --port 9000 --api-port 8080
-
-# Terminal 2: Start Agent B
-uv run agentpay start --port 9100 --ws-port 9101 --api-port 8081 \
-  --identity-path ~/.agentic-payments/identity2.key
-
-# Terminal 3: Open channel from A to B
-uv run agentpay channel open \
-  --peer $(curl -s http://127.0.0.1:8081/identity | python3 -c "import sys,json; print(json.load(sys.stdin)['peer_id'])") \
-  --deposit 1000000000000000000
-
-# Send payments
-uv run agentpay pay --channel <CHANNEL_ID> --amount 100000000000000
-uv run agentpay pay --channel <CHANNEL_ID> --amount 100000000000000
-
-# Check balances
-uv run agentpay balance
-uv run agentpay balance --api-url http://127.0.0.1:8081
-
-# Close the channel
-uv run agentpay channel close --channel <CHANNEL_ID>
-```
-
-### Frontend dashboard
-
-```bash
-# Start both agents (see above), then:
-cd frontend && npm install && npm run dev
-
-# Open http://localhost:3000 in your browser
-# Agent A (left) connects to :8080, Agent B (right) connects to :8081
-```
-
-See [Frontend Dashboard (Browser)](#frontend-dashboard-browser) above for full step-by-step usage.
-
-### Custom ports via environment variables
-
-```bash
-# Override defaults via env vars instead of flags
-NODE_PORT=9200 NODE_WS_PORT=9201 API_PORT=8090 uv run agentpay start
-```
-
-### Show identity without starting the node
-
-```bash
-uv run agentpay identity show
-# PeerID: 12D3KooWQ1og24JN7vgK2SD57wM4XkrRWEk1QgwPxbtdCbt9cKDR
-# Key file: /home/user/.agentic-payments/identity.key
-```
+| Channel open fails | Peers not connected | `dev.sh` handles bidirectional connect automatically |
+| CORS error in browser | Frontend not on localhost:3000 | Frontend must run on `localhost:3000` |
+| Port 3000 in use | Another dev server running | `npx kill-port 3000` |

@@ -46,6 +46,7 @@ services:
     restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=/api
+      - BACKEND_HOST=backend
     ports:
       - "3000:3000"
     depends_on:

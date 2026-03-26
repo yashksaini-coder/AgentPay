@@ -31,7 +31,7 @@ export function useNetworkEvents(agents: AgentState[], labelFn: (i: number) => s
     (evt: Omit<NetworkEvent, "id" | "timestamp">) => {
       setEvents((prev) => {
         const next = [
-          { ...evt, id: crypto.randomUUID(), timestamp: Date.now() },
+          { ...evt, id: globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2), timestamp: Date.now() },
           ...prev,
         ];
         return next.slice(0, 100);

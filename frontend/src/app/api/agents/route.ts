@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 const BASE_API_PORT = 8080;
+const BACKEND_HOST = process.env.BACKEND_HOST || "127.0.0.1";
 
 function agentLabel(apiPort: number): string {
   const idx = apiPort - BASE_API_PORT;
@@ -12,7 +13,7 @@ async function probeAgentPort(apiPort: number): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 800);
-    const res = await fetch(`http://127.0.0.1:${apiPort}/health`, { signal: controller.signal });
+    const res = await fetch(`http://${BACKEND_HOST}:${apiPort}/health`, { signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) return false;
     const data = await res.json();

@@ -27,8 +27,11 @@ interface WsSnapshot {
 
 function resolveBaseUrl(port: number): string {
   const env = process.env.NEXT_PUBLIC_API_URL;
-  // In production (env set to "/api"), route through nginx proxy
-  if (env && !env.includes("127.0.0.1") && !env.includes("localhost")) return env;
+  // In production (env set to "/api"), route through nginx per-agent proxy
+  if (env && !env.includes("127.0.0.1") && !env.includes("localhost")) {
+    const index = port - 8080;
+    return `/api/${index}`;
+  }
   // Local dev: connect directly to the agent's port
   return `http://127.0.0.1:${port}`;
 }
@@ -37,8 +40,9 @@ function resolveWsUrl(port: number): string {
   if (typeof window === "undefined") return "";
   const env = process.env.NEXT_PUBLIC_API_URL;
   if (env && !env.includes("127.0.0.1") && !env.includes("localhost")) {
+    const index = port - 8080;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}/api/ws`;
+    return `${proto}//${window.location.host}/api/${index}/ws`;
   }
   return `ws://127.0.0.1:${port}/ws`;
 }

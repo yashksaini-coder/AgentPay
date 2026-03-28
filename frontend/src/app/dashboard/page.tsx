@@ -1548,7 +1548,12 @@ function SimulationPanel({
     setStats({ ok: 0, fail: 0, total: 0 });
 
     // Use already-running agents — no spawning
-    let agents = getAgents().filter((a) => a.online && a.identity?.peer_id);
+    // In remote mode, only live agents can participate in real operations
+    let agents = getAgents().filter((a) => a.online && a.identity?.peer_id && a.live);
+    // Single live node: duplicate it so the simulation can run self-channels
+    if (agents.length === 1) {
+      agents = [agents[0], agents[0]];
+    }
     if (agents.length < 2) { setPhase("idle"); setProgress("Need at least 2 online agents"); return; }
 
     // ── Phase 1: Open channels ──

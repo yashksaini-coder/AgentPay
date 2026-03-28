@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ClientShell from "@/components/ClientShell";
 
 export const metadata: Metadata = {
   title: "AgentPay — P2P Micropayments for AI Agents",
@@ -15,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen antialiased">
-        <div className="relative z-10">{children}</div>
+        <ClientShell>{children}</ClientShell>
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    profiles: ["full", "backend"]
     environment:
       POSTGRES_DB: agentic_payments
       POSTGRES_USER: agent
@@ -10,6 +11,7 @@ services:
 
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
+    profiles: ["full", "backend"]
     entrypoint: ["anvil", "--host", "0.0.0.0"]
     ports: ["8545:8545"]
 
@@ -17,9 +19,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    profiles: ["full", "backend"]
     environment:
       - API_HOST=0.0.0.0
-      - CORS_ORIGINS=http://localhost,http://app.agentpay.io
+      - CORS_ORIGINS=http://localhost,http://localhost:3000,http://app.agentpay.io
     ports:
       - "8080:8080"
       - "9000:9000"
@@ -31,6 +34,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    profiles: ["full", "frontend"]
     environment:
       - NEXT_PUBLIC_API_URL=/api
     ports:
@@ -40,6 +44,7 @@ services:
 
   nginx:
     image: nginx:alpine
+    profiles: ["full"]
     ports:
       - "80:80"
     volumes:

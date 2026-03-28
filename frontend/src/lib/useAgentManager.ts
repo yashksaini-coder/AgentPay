@@ -11,6 +11,13 @@ export interface ManagedAgent {
   startedAt: number;
   alive: boolean;
   external?: boolean;
+  // Discovery identity (populated in remote mode)
+  peer_id?: string;
+  eth_address?: string;
+  capabilities?: { service_type: string; price_per_call: number; description: string; role?: string }[];
+  addrs?: string[];
+  /** true when this agent has a real running backend API */
+  live?: boolean;
 }
 
 interface ManagerState {

@@ -7,7 +7,7 @@
 #  including the autonomous Agent Runtime.
 #
 #  Prerequisites:
-#    ./scripts/dev.sh   # start 2 agents + frontend
+#    ./scripts/dev.sh   # start 2 agents
 #
 #  Usage:
 #    ./scripts/agent_demo.sh              # auto-detect agents

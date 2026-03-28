@@ -6,7 +6,7 @@
 #  screen-record. Designed to run alongside ./scripts/dev.sh.
 #
 #  Usage:
-#    # Terminal 1 — start agents + frontend
+#    # Terminal 1 — start agents
 #    ./scripts/dev.sh --agents 3
 #
 #    # Terminal 2 — run demo (wait ~10s for agents to boot)
@@ -411,6 +411,6 @@ echo "    8. ${CYAN}SLA Monitoring${NC}    — Latency/error thresholds"
 echo "    9. ${CYAN}Dispute Detection${NC} — Stale voucher scanning"
 echo "   10. ${CYAN}Channel Close${NC}     — Cooperative settlement"
 echo ""
-echo "  ${DIM}Dashboard: ${PURPLE}http://localhost:3000${NC}"
+echo "  ${DIM}Frontend:  cd frontend && bun dev${NC}"
 echo "  ${DIM}Docs:      docs/ARCHITECTURE.md${NC}"
 echo ""

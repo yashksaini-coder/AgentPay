@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────
-#  AgentPay — One-command development startup
+#  AgentPay — Backend development startup
 #
-#  Starts N agent nodes + Next.js frontend.
+#  Starts N agent nodes (backend only).
 #  Waits for each agent's /health before proceeding,
 #  then connects agents bidirectionally to avoid peer
 #  expiry race conditions.
 #
+#  Frontend runs separately: cd frontend && bun dev
+#
 #  Usage:
 #    ./scripts/dev.sh                # 2 agents (default)
 #    ./scripts/dev.sh --agents 3     # 3 agents
-#    ./scripts/dev.sh --no-agents    # frontend only
 #
 #  Port allocation per agent (0-indexed):
 #    P2P:  9000 + i*100    (9000, 9100, 9200, ...)
@@ -26,17 +27,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # ── Parse arguments ──────────────────────────────────────
-NUM_AGENTS=2
-NO_AGENTS=false
+NUM_AGENTS=5
 AGENT_ENABLED=false
 AGENT_TICK=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-agents)
-      NO_AGENTS=true
-      shift
-      ;;
     --agents)
       NUM_AGENTS="${2:?--agents requires a number}"
       shift 2
@@ -55,7 +51,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--agents N] [--no-agents] [--agent-enabled] [--agent-tick SECS]" >&2
+      echo "Usage: $0 [--agents N] [--agent-enabled] [--agent-tick SECS]" >&2
       exit 1
       ;;
   esac
@@ -147,9 +143,8 @@ cleanup() {
     fi
   done
 
-  # Final sweep — kill any orphaned agentpay or next processes
+  # Final sweep — kill any orphaned agentpay processes
   pkill -9 -f "agentpay start" 2>/dev/null || true
-  pkill -9 -f "next dev.*frontend" 2>/dev/null || true
 
   wait 2>/dev/null || true
 
@@ -161,10 +156,8 @@ trap cleanup EXIT INT TERM
 
 # ── Banner ───────────────────────────────────────────────
 echo "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "${PURPLE}  AgentPay — Development Server${NC}"
-if [[ "$NO_AGENTS" == false ]]; then
-  echo "${PURPLE}  Starting ${NUM_AGENTS} agent(s)${NC}"
-fi
+echo "${PURPLE}  AgentPay — Backend Development Server${NC}"
+echo "${PURPLE}  Starting ${NUM_AGENTS} agent(s)${NC}"
 echo "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
@@ -173,8 +166,6 @@ echo "${BLUE}[setup]${NC} Syncing Python dependencies..."
 uv sync --group dev --quiet 2>/dev/null || uv sync --group dev
 
 # ── Log filter ───────────────────────────────────────────
-TAG_UI="${PURPLE}[UI]${NC}"
-
 filter_agent_log() {
   local tag="$1"
   while IFS= read -r line; do
@@ -206,8 +197,7 @@ filter_agent_log() {
 }
 
 # ── Start agents ─────────────────────────────────────────
-if [[ "$NO_AGENTS" == false ]]; then
-  for (( i=0; i<NUM_AGENTS; i++ )); do
+for (( i=0; i<NUM_AGENTS; i++ )); do
     label=$(agent_label "$i")
     color=$(agent_color "$i")
     p2p_port=$((9000 + i * 100))
@@ -248,98 +238,76 @@ if [[ "$NO_AGENTS" == false ]]; then
     if [[ -n "$AGENT_PID" ]]; then
       CHILD_PIDS+=("$AGENT_PID")
     fi
-  done
+done
 
-  # ── Wait for all agents to be healthy ──────────────────
+# ── Wait for all agents to be healthy ──────────────────
+echo ""
+echo "${BLUE}[setup]${NC} Waiting for agents to become healthy..."
+ALL_HEALTHY=true
+for (( i=0; i<NUM_AGENTS; i++ )); do
+  label=$(agent_label "$i")
+  api_port=$((8080 + i))
+  if ! wait_for_health "$api_port" "$label"; then
+    ALL_HEALTHY=false
+  fi
+done
+
+if [[ "$ALL_HEALTHY" == false ]]; then
+  echo "${RED}  Some agents failed to start. Check logs above.${NC}"
+fi
+
+# ── Connect agents bidirectionally ─────────────────────
+if [[ "$ALL_HEALTHY" == true ]] && (( NUM_AGENTS > 1 )); then
   echo ""
-  echo "${BLUE}[setup]${NC} Waiting for agents to become healthy..."
-  ALL_HEALTHY=true
+  echo "${BLUE}[setup]${NC} Connecting agents bidirectionally..."
+
   for (( i=0; i<NUM_AGENTS; i++ )); do
-    label=$(agent_label "$i")
-    api_port=$((8080 + i))
-    if ! wait_for_health "$api_port" "$label"; then
-      ALL_HEALTHY=false
-    fi
-  done
+    for (( j=i+1; j<NUM_AGENTS; j++ )); do
+      label_i=$(agent_label "$i")
+      label_j=$(agent_label "$j")
+      api_i=$((8080 + i))
+      api_j=$((8080 + j))
 
-  if [[ "$ALL_HEALTHY" == false ]]; then
-    echo "${RED}  Some agents failed to start. Check logs above.${NC}"
-  fi
+      # Get agent j's multiaddr, connect i→j
+      ADDR_J=$(curl -sf "http://127.0.0.1:${api_j}/identity" 2>/dev/null | \
+        python3 -c "import sys,json; a=json.load(sys.stdin).get('addrs',[]); print(a[0].replace('0.0.0.0','127.0.0.1') if a else '')" 2>/dev/null || echo "")
+      if [[ -n "$ADDR_J" ]]; then
+        BODY_J=$(python3 -c "import json,sys; print(json.dumps({'multiaddr':sys.argv[1]}))" "$ADDR_J")
+        curl -sf -X POST "http://127.0.0.1:${api_i}/connect" \
+          -H "Content-Type: application/json" \
+          -d "$BODY_J" >/dev/null 2>&1 || true
+        echo "  ${GREEN}${label_i} → ${label_j}${NC} connected"
+      fi
 
-  # ── Connect agents bidirectionally ─────────────────────
-  if [[ "$ALL_HEALTHY" == true ]] && (( NUM_AGENTS > 1 )); then
-    echo ""
-    echo "${BLUE}[setup]${NC} Connecting agents bidirectionally..."
-
-    for (( i=0; i<NUM_AGENTS; i++ )); do
-      for (( j=i+1; j<NUM_AGENTS; j++ )); do
-        label_i=$(agent_label "$i")
-        label_j=$(agent_label "$j")
-        api_i=$((8080 + i))
-        api_j=$((8080 + j))
-
-        # Get agent j's multiaddr, connect i→j
-        ADDR_J=$(curl -sf "http://127.0.0.1:${api_j}/identity" 2>/dev/null | \
-          python3 -c "import sys,json; a=json.load(sys.stdin).get('addrs',[]); print(a[0].replace('0.0.0.0','127.0.0.1') if a else '')" 2>/dev/null || echo "")
-        if [[ -n "$ADDR_J" ]]; then
-          BODY_J=$(python3 -c "import json,sys; print(json.dumps({'multiaddr':sys.argv[1]}))" "$ADDR_J")
-          curl -sf -X POST "http://127.0.0.1:${api_i}/connect" \
-            -H "Content-Type: application/json" \
-            -d "$BODY_J" >/dev/null 2>&1 || true
-          echo "  ${GREEN}${label_i} → ${label_j}${NC} connected"
-        fi
-
-        # Get agent i's multiaddr, connect j→i
-        ADDR_I=$(curl -sf "http://127.0.0.1:${api_i}/identity" 2>/dev/null | \
-          python3 -c "import sys,json; a=json.load(sys.stdin).get('addrs',[]); print(a[0].replace('0.0.0.0','127.0.0.1') if a else '')" 2>/dev/null || echo "")
-        if [[ -n "$ADDR_I" ]]; then
-          BODY_I=$(python3 -c "import json,sys; print(json.dumps({'multiaddr':sys.argv[1]}))" "$ADDR_I")
-          curl -sf -X POST "http://127.0.0.1:${api_j}/connect" \
-            -H "Content-Type: application/json" \
-            -d "$BODY_I" >/dev/null 2>&1 || true
-          echo "  ${GREEN}${label_j} → ${label_i}${NC} connected"
-        fi
-      done
+      # Get agent i's multiaddr, connect j→i
+      ADDR_I=$(curl -sf "http://127.0.0.1:${api_i}/identity" 2>/dev/null | \
+        python3 -c "import sys,json; a=json.load(sys.stdin).get('addrs',[]); print(a[0].replace('0.0.0.0','127.0.0.1') if a else '')" 2>/dev/null || echo "")
+      if [[ -n "$ADDR_I" ]]; then
+        BODY_I=$(python3 -c "import json,sys; print(json.dumps({'multiaddr':sys.argv[1]}))" "$ADDR_I")
+        curl -sf -X POST "http://127.0.0.1:${api_j}/connect" \
+          -H "Content-Type: application/json" \
+          -d "$BODY_I" >/dev/null 2>&1 || true
+        echo "  ${GREEN}${label_j} → ${label_i}${NC} connected"
+      fi
     done
-  fi
-
-  echo ""
-fi
-
-# ── Start frontend ───────────────────────────────────────
-echo "${PURPLE}[frontend]${NC} Starting Next.js on port 3000..."
-cd "$ROOT/frontend"
-
-if [ ! -d "node_modules" ]; then
-  echo "${PURPLE}[frontend]${NC} Installing npm dependencies..."
-  npm install --silent
-fi
-
-npm run dev 2>&1 | while IFS= read -r line; do printf '  %s %s\n' "$TAG_UI" "$line"; done &
-PIPE_PID=$!
-CHILD_PIDS+=("$PIPE_PID")
-sleep 0.5
-NEXT_PID=$(pgrep -f "next dev" 2>/dev/null | head -1 || true)
-if [[ -n "$NEXT_PID" ]]; then
-  CHILD_PIDS+=("$NEXT_PID")
+  done
 fi
 
 # ── Summary ──────────────────────────────────────────────
 echo ""
 echo "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo "${GREEN}  All services started!${NC}"
+echo "${GREEN}  Backend agents started!${NC}"
 echo ""
-if [[ "$NO_AGENTS" == false ]]; then
-  for (( i=0; i<NUM_AGENTS; i++ )); do
-    label=$(agent_label "$i")
-    color=$(agent_color "$i")
-    api_port=$((8080 + i))
-    echo "  Agent ${label} API:  ${color}http://127.0.0.1:${api_port}${NC}"
-  done
-fi
-echo "  Dashboard:    ${PURPLE}http://localhost:3000${NC}"
+for (( i=0; i<NUM_AGENTS; i++ )); do
+  label=$(agent_label "$i")
+  color=$(agent_color "$i")
+  api_port=$((8080 + i))
+  echo "  Agent ${label} API:  ${color}http://127.0.0.1:${api_port}${NC}"
+done
 echo ""
-echo "  Press ${RED}Ctrl+C${NC} to stop all services."
+echo "  ${DIM}Frontend: cd frontend && bun dev${NC}"
+echo ""
+echo "  Press ${RED}Ctrl+C${NC} to stop all agents."
 echo "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 

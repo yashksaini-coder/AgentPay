@@ -84,6 +84,17 @@ class ChannelManager:
     async def handle_open_request(self, msg: PaymentOpen, peer_id: str) -> PaymentChannel:
         """Handle an incoming channel open request from a peer."""
         if msg.channel_id in self.channels:
+            existing = self.channels[msg.channel_id]
+            # Self-channel: we proposed it and received our own open message back.
+            # Accept the existing channel instead of rejecting as duplicate.
+            if existing.state.name == "PROPOSED" and existing.peer_id == peer_id:
+                existing.accept()
+                existing.activate()
+                logger.info(
+                    "self_channel_accepted",
+                    channel_id=msg.channel_id.hex()[:16],
+                )
+                return existing
             raise PaymentError(
                 PaymentErrorCode.CHANNEL_ALREADY_EXISTS,
                 detail=f"Channel {msg.channel_id.hex()[:16]} already exists",
@@ -115,6 +126,11 @@ class ChannelManager:
     async def handle_payment_update(self, msg: PaymentUpdate) -> None:
         """Handle an incoming payment update (voucher)."""
         channel = self.get_channel(msg.channel_id)
+
+        # Self-channel: sender already applied this voucher locally.
+        # Accept without re-applying if nonce is already current.
+        if channel.nonce >= msg.nonce and channel.sender == self.local_address:
+            return
 
         # Validate timestamp is recent to prevent replay of old vouchers
         now = int(time.time())
@@ -239,8 +255,11 @@ class ChannelManager:
                 )
             )
 
-            # Commit locally only after successful send
-            channel.apply_voucher(voucher)
+            # Commit locally only after successful send.
+            # Self-channel: the receiver (same node) already applied the voucher,
+            # so skip if nonce is already up to date.
+            if channel.nonce < voucher.nonce:
+                channel.apply_voucher(voucher)
 
             # Record payment for policy tracking
             if self.policy_engine is not None:

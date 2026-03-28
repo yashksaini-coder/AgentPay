@@ -648,8 +648,10 @@ class AgentNode:
                 raw = await read_message(stream)
             _, ack = from_wire(raw)
             if ack.status == "accepted":
-                channel.accept()
-                channel.activate()
+                # Self-channel: handle_open_request already activated it
+                if channel.state.name != "ACTIVE":
+                    channel.accept()
+                    channel.activate()
                 self._streams[peer_id] = stream
                 logger.info("channel_opened", channel_id=msg.channel_id.hex()[:16])
             else:

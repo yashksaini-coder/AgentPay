@@ -1,6 +1,7 @@
 name: Deploy Backend
 
 on:
+  workflow_dispatch:
   push:
     branches: [master]
     paths:
@@ -12,7 +13,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v6
 

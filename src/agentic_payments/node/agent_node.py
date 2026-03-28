@@ -501,6 +501,11 @@ class AgentNode:
                 # Publish our own capabilities
                 await self._broadcast_capabilities()
 
+                # Seed demo agents if enabled
+                self.capability_registry.seed_demo_agents(
+                    own_peer_id=self.peer_id.to_base58(),  # type: ignore[union-attr]
+                )
+
                 # Sync existing local channels into the routing graph
                 self._sync_graph_from_channels()
 

@@ -173,9 +173,7 @@ async def _run_phases(agent_enabled: bool) -> None:
         t_start = time.monotonic_ns()
         for i in range(1, 11):
             amount = i * 10000000000000000
-            v = await _call(
-                API_A, "/pay", "POST", {"channel_id": channel_id, "amount": amount}
-            )
+            v = await _call(API_A, "/pay", "POST", {"channel_id": channel_id, "amount": amount})
             voucher = v.get("voucher", {})
             nonce = voucher.get("nonce", 0)
             cum = voucher.get("cumulative_amount", 0)
@@ -266,9 +264,7 @@ async def _run_phases(agent_enabled: bool) -> None:
             _ok(f"Task status: {_Y}{task_state}{_NC}")
 
             _info("Executing task...")
-            exec_result = await _call(
-                API_A, "/agent/execute", "POST", {"task_id": task_id}
-            )
+            exec_result = await _call(API_A, "/agent/execute", "POST", {"task_id": task_id})
             exec_status = exec_result.get("status", exec_result.get("task", {}).get("status", "?"))
             _ok(f"Execution result: {_G}{exec_status}{_NC}")
         else:

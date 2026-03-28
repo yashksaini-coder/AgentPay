@@ -16,36 +16,63 @@ logger = structlog.get_logger(__name__)
 # Agents not seen for this many seconds are pruned
 STALE_THRESHOLD = int(os.environ.get("STALE_THRESHOLD", "300"))
 
+_CapDict = dict[str, str | int]
+_ProfileDict = dict[str, str | list[_CapDict]]
+
 # Demo agent profiles for seeding the discovery registry
-_DEMO_PROFILES = [
+_DEMO_PROFILES: list[_ProfileDict] = [
     {
         "label": "B",
         "role": "worker",
         "capabilities": [
-            {"service_type": "llm-inference", "price_per_call": 50000, "description": "GPT-4 inference endpoint"},
+            {
+                "service_type": "llm-inference",
+                "price_per_call": 50000,
+                "description": "GPT-4 inference endpoint",
+            },
         ],
     },
     {
         "label": "C",
         "role": "data_provider",
         "capabilities": [
-            {"service_type": "data-retrieval", "price_per_call": 10000, "description": "Indexed blockchain data"},
-            {"service_type": "ipfs-pinning", "price_per_call": 25000, "description": "IPFS pin & retrieve"},
+            {
+                "service_type": "data-retrieval",
+                "price_per_call": 10000,
+                "description": "Indexed blockchain data",
+            },
+            {
+                "service_type": "ipfs-pinning",
+                "price_per_call": 25000,
+                "description": "IPFS pin & retrieve",
+            },
         ],
     },
     {
         "label": "D",
         "role": "validator",
         "capabilities": [
-            {"service_type": "proof-verification", "price_per_call": 30000, "description": "ZK proof validation"},
+            {
+                "service_type": "proof-verification",
+                "price_per_call": 30000,
+                "description": "ZK proof validation",
+            },
         ],
     },
     {
         "label": "E",
         "role": "gateway",
         "capabilities": [
-            {"service_type": "api-gateway", "price_per_call": 5000, "description": "Rate-limited API proxy"},
-            {"service_type": "image-gen", "price_per_call": 100000, "description": "Stable Diffusion XL"},
+            {
+                "service_type": "api-gateway",
+                "price_per_call": 5000,
+                "description": "Rate-limited API proxy",
+            },
+            {
+                "service_type": "image-gen",
+                "price_per_call": 100000,
+                "description": "Stable Diffusion XL",
+            },
         ],
     },
 ]
@@ -83,14 +110,16 @@ class CapabilityRegistry:
             seed = f"agentpay-demo-{profile['label']}"
             peer_id = _deterministic_peer_id(seed)
             eth_address = _deterministic_eth_address(seed)
+            cap_list: list[_CapDict] = profile["capabilities"]  # type: ignore[assignment]
+            role = str(profile["role"])
             caps = [
                 AgentCapability(
-                    service_type=c["service_type"],
-                    price_per_call=c["price_per_call"],
-                    description=c["description"],
-                    role=profile["role"],
+                    service_type=str(c["service_type"]),
+                    price_per_call=int(c["price_per_call"]),
+                    description=str(c["description"]),
+                    role=role,
                 )
-                for c in profile["capabilities"]
+                for c in cap_list
             ]
             ad = AgentAdvertisement(
                 peer_id=peer_id,
@@ -134,7 +163,8 @@ class CapabilityRegistry:
         """Remove agents not seen within the stale threshold. Returns count pruned."""
         cutoff = time.time() - self._stale_threshold
         stale = [
-            pid for pid, ad in self._agents.items()
+            pid
+            for pid, ad in self._agents.items()
             if ad.last_seen < cutoff and pid not in self._pinned
         ]
         for pid in stale:

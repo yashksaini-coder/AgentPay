@@ -471,9 +471,15 @@ export type Api = ReturnType<typeof createApi>;
 
 export function formatWei(wei: number): string {
   if (wei === 0) return "0";
-  if (wei >= 1e18) return `${(wei / 1e18).toFixed(4)} ETH`;
-  if (wei >= 1e9) return `${(wei / 1e9).toFixed(2)} Gwei`;
-  return `${wei.toLocaleString()} wei`;
+  const abs = Math.abs(wei);
+  if (abs >= 1e18) return `${(wei / 1e18).toFixed(4)} ETH`;
+  if (abs >= 1e15) return `${(wei / 1e15).toFixed(2)} mETH`;
+  if (abs >= 1e12) return `${(wei / 1e12).toFixed(2)} μETH`;
+  if (abs >= 1e9)  return `${(wei / 1e9).toFixed(2)} Gwei`;
+  // Below Gwei — show compact integer with "wei" or K/M suffixes
+  if (abs >= 1e6)  return `${(wei / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3)  return `${(wei / 1e3).toFixed(1)}K`;
+  return `${wei}`;
 }
 
 export function shortenId(id: string, chars: number = 8): string {

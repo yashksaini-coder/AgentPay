@@ -48,6 +48,7 @@ diagrams/
 
 # Internal docs and blog drafts (kept local, not tracked)
 docs/PITCH.md
+docs/PRESENTATION.md
 blog/
 
 # Data

@@ -17,7 +17,14 @@ export default function ReceiptChain({ api }: ReceiptChainProps) {
   const refresh = useCallback(async () => {
     try {
       const res = await api.getReceipts();
-      setChannels(res.channels);
+      // Deduplicate channels by channel_id (both sender/receiver may report same channel)
+      const seen = new Set<string>();
+      const unique = (res.channels || []).filter((ch: { channel_id: string }) => {
+        if (seen.has(ch.channel_id)) return false;
+        seen.add(ch.channel_id);
+        return true;
+      });
+      setChannels(unique);
     } catch {
       /* ignore */
     }
